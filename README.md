@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/readme/watches.webp" width="720" alt="Three Apple Watches: Noodle, Ray and Tangle">
+  <img src="docs/media/readme/watches.webp" width="720" alt="Three Apple Watches: Noodle, Ray and Stretch">
 </p>
 
 <p align="center">
