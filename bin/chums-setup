@@ -66,7 +66,7 @@ elif [[ -x $KPY ]] && "$KPY" -c 'import mlx_audio, misaki' 2>/dev/null; then
   ok "agents' voices (Kokoro, ~/.chums/kokoro)"
 elif command -v uv >/dev/null; then
   print "  ...   installing the agents' voices (Kokoro: its Python in ~/.chums/kokoro, about 1.1 GB; its model, about 0.35 GB)"
-  mkdir -p ~/.chums/kokoro
+  mkdir -p -m 700 ~/.chums; mkdir -p ~/.chums/kokoro       # ~/.chums is yours alone (the hub keeps it so too)
   if uv venv -q --python 3.12 ~/.chums/kokoro/.venv && uv pip install -q --python "$KPY" -r "$ROOT/tools/kokoro-requirements.txt" \
      && (cd ~/.chums/kokoro && "$KPY" "$ROOT/tools/kokoro-server.py" --once --voices english >/dev/null 2>&1)
   then touch ~/.chums/kokoro/.voices-english; ok "agents' voices (Kokoro, ~/.chums/kokoro)"

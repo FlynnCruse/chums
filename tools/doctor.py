@@ -1,6 +1,7 @@
 """Checks the whole Chums chain on this Mac and prints a pass/fail list, with the fix for each failure.
 
-Run it as bin/chums-doctor. It is read-only: it starts, stops, writes and installs nothing. What it does:
+Run it as bin/chums-doctor. It is read-only: it starts, stops, changes and installs nothing (devicectl's list of
+devices passes through a temporary file). What it does:
   - runs version and sign-in checks (`claude auth status`, `codex login status`, `xcodebuild -version`, ...);
   - reads ~/.chums/config.json and ~/.chums/agents.json;
   - asks the hub for /v1/ping and /v1/state on 127.0.0.1, and the Funnel URL for /v1/ping over HTTPS;
@@ -207,7 +208,7 @@ if claude:
         ok(f'Claude Code {cv}, signed in ({method}){where}')
         if method != 'claude.ai':
             note('Remote Control (the session also showing in the Claude app) needs a claude.ai login; '
-                 'with an API key, start sessions with CHUMS_NO_RC=1')
+                 'with an API key, set "remoteControl": false in ~/.chums/config.json')
     else:
         (fail if need_claude else warn)(f'Claude Code {cv} is installed but not signed in{where}',
                                          'run claude, then /login (a Pro, Max, Team or Enterprise plan, or a Console API key)')
@@ -447,16 +448,15 @@ if url and cfg and cfg.get('watchToken'):
         fail(f'{name} does not resolve in public DNS yet',
              ['a new Funnel name takes a while: Tailscale says up to 10 minutes; it has taken about 25',
               'run bin/chums-doctor again later; nothing else to do'])
-    code, body = None, ''
-    with tempfile.NamedTemporaryFile() as tmp:
-        t0 = time.time()
-        rc, out, err = run(['curl', '-sS', '--max-time', '15', '-o', tmp.name, '-w', '%{http_code} %{remote_ip}',
-                            '-H', '@-', f'{url.rstrip("/")}/v1/ping'],
-                           timeout=25, stdin=f'Authorization: Bearer {cfg["watchToken"]}\n')
-        took = time.time() - t0
-        parts = out.split()
-        code = parts[0] if parts else None
-        remote = parts[1] if len(parts) > 1 else ''
+    # the answer's body isn't kept (read-only: nothing written, not even a temporary file)
+    t0 = time.time()
+    rc, out, err = run(['curl', '-sS', '--max-time', '15', '-o', '/dev/null', '-w', '%{http_code} %{remote_ip}',
+                        '-H', '@-', f'{url.rstrip("/")}/v1/ping'],
+                       timeout=25, stdin=f'Authorization: Bearer {cfg["watchToken"]}\n')
+    took = time.time() - t0
+    parts = out.split()
+    code = parts[0] if parts else None
+    remote = parts[1] if len(parts) > 1 else ''
     tailnet = False
     try: tailnet = ipaddress.ip_address(remote) in ipaddress.ip_network('100.64.0.0/10') or remote.startswith('fd7a:115c:a1e0')
     except ValueError: pass
@@ -556,10 +556,13 @@ section('7. The Apple Watch (as Xcode sees it)')
 if not xcode_ok:
     note('skipped: Xcode is needed to see devices')
 else:
-    with tempfile.NamedTemporaryFile(suffix='.json') as tmp:
-        rc, out, err = run(['xcrun', 'devicectl', 'list', 'devices', '--json-output', tmp.name], timeout=60, env={'DEVELOPER_DIR': DEV})
-        try: devices = json.load(open(tmp.name))['result']['devices']
-        except (ValueError, KeyError, OSError): devices = None
+    devices, rc, out, err = None, 1, '', ''
+    try:                                                     # devicectl writes its list only to a file
+        with tempfile.NamedTemporaryFile(suffix='.json') as tmp:
+            rc, out, err = run(['xcrun', 'devicectl', 'list', 'devices', '--json-output', tmp.name], timeout=60, env={'DEVELOPER_DIR': DEV})
+            try: devices = json.load(open(tmp.name))['result']['devices']
+            except (ValueError, KeyError, OSError): devices = None
+    except OSError as e: err = f'no temporary file for its list: {e}'
     if devices is None:
         fail(f'xcrun devicectl could not list devices ({(err or out).splitlines()[-1] if (err or out) else rc})', 'open Xcode once and try again')
     else:

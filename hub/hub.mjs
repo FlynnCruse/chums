@@ -1374,6 +1374,8 @@ const setRuntime = (id, runtime) => serially(async () => {
   if (!available().includes(runtime)) throw Object.assign(new Error(`${runtime === 'codex' ? 'Codex' : 'Claude Code'} isn't installed on this Mac`), { code: 409 })
   const was = a.runtime ?? 'claude'
   if (was === runtime) return { id, runtime }
+  // as it was, to go back to if the new runtime doesn't start
+  const before = JSON.parse(JSON.stringify({ runtime: a.runtime, sessionId: a.sessionId, model: a.model, byRuntime: a.byRuntime }))
   a.byRuntime ??= {}
   a.byRuntime[was] = { ...(a.sessionId ? { sessionId: a.sessionId } : {}), ...(a.model ? { model: a.model } : {}) }
   const back = a.byRuntime[runtime] ?? {}
@@ -1389,8 +1391,19 @@ const setRuntime = (id, runtime) => serially(async () => {
   else { runners.get(id)?.stop(); runners.delete(id) }
   const old = sessionOf(id)
   if (old) { sessions.delete(old.id); for (const [rid, x] of approvals) if (x.sessionId === old.id) approvals.delete(rid) }
-  if (runtime === 'claude') await run(AGENTS_BIN, ['add', id], 120_000)
-  else runners.set(id, startRunner(a, runtimeHub))
+  try {
+    if (runtime === 'claude') await run(AGENTS_BIN, ['add', id], 120_000)
+    else runners.set(id, startRunner(a, runtimeHub))
+  } catch (e) {
+    // it didn't start: the agent goes back to what it ran on, and runs there again
+    log(`${id}: couldn't start on ${runtime} (${e.message}); back on ${was}`)
+    for (const k of Object.keys(before)) { if (before[k] === undefined) delete a[k]; else a[k] = before[k] }
+    saveAgents()
+    if (was === 'claude') await run(AGENTS_BIN, ['add', id], 120_000).catch(e2 => log(`${id}: restarting it on Claude Code: ${e2.message}`))
+    else runners.set(id, startRunner(a, runtimeHub))
+    bump()
+    throw Object.assign(new Error(`${id} couldn't start on ${runtime === 'codex' ? 'Codex' : 'Claude Code'}: ${e.message}`), { code: 500 })
+  }
   log(`${id}: now on ${runtime}`); bump()
   return { id, runtime }
 })

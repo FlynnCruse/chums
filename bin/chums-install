@@ -142,10 +142,10 @@ else
       echo "Chums is installed on $PNAME."; break
     fi
     echo "iPhone install attempt $i failed ($(grep -m1 -o 'ERROR: [^(]*' "$ILOG" || tail -1 "$ILOG")); unlock the iPhone"
-    [[ $i == 3 ]] && echo "Skipping the iPhone app. Full log: $ILOG"
+    [[ $i == 3 ]] && { echo "The iPhone app didn't install. Full log: $ILOG"; PHONE_FAILED=1 }
     sleep 4
   done
 fi
 
-[[ -n "$WATCH_FAILED" ]] && exit 1
+[[ -n "$WATCH_FAILED" || -n "${PHONE_FAILED:-}" ]] && exit 1
 echo "Next: start the agents (bin/chums-agents install; docs/setup.md, step 10), and check the whole chain with bin/chums-doctor."

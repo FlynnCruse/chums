@@ -52,8 +52,12 @@ EOF
 configs=(--mcp-config "$MCP_JSON")
 [[ -f ./.mcp.json ]] && configs+=(--mcp-config ./.mcp.json)
 
+# Remote Control needs a claude.ai login: off with "remoteControl": false in ~/.chums/config.json (an API key), or
+# CHUMS_NO_RC=1 for this session
 rc=(--remote-control)
 [[ -n "$CHUMS_NO_RC" ]] && rc=()
+node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).remoteControl === false ? 0 : 1)' \
+  ~/.chums/config.json 2>/dev/null && rc=()
 
 # Speaking to the watch is always allowed; a reply that waits on an approval would never be heard.
 exec command claude "${configs[@]}" "${rc[@]}" --settings "$HOOKS_JSON" \

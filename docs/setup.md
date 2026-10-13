@@ -86,7 +86,7 @@ the watch or the iPhone in step 10.
 | Where it runs | In the background (`bin/chums-agents install`), or in a terminal (`bin/chums-agents open <id>`) | Inside the hub, started with it |
 | Where you see it on the Mac | Its terminal, and the Claude app (Remote Control) | A Codex terminal on the same thread: `bin/chums-codex <id>` |
 | In `~/.chums/agents.json` | `"runtime": "claude"`, or no `runtime` | `"runtime": "codex"` |
-| Notes | Channels are a research preview. Team and Enterprise plans: an Owner enables channels (and Remote Control) in the organization's Claude Code settings. Remote Control needs a claude.ai login; with an API key, set `CHUMS_NO_RC=1` (export it before `bin/chums-agents install`, which keeps it for the background agents) | OpenAI labels the app-server experimental; Chums was written against 0.160. If Codex's default model isn't on your plan, set `"model"` |
+| Notes | Channels are a research preview. Team and Enterprise plans: an Owner enables channels (and Remote Control) in the organization's Claude Code settings. Remote Control needs a claude.ai login; with an API key, set `"remoteControl": false` in `~/.chums/config.json` | OpenAI labels the app-server experimental; Chums was written against 0.160. If Codex's default model isn't on your plan, set `"model"` |
 
 Changing an agent's soul by voice (its name, what it looks after, its voice) runs `claude -p` on the Mac, so that one
 feature needs Claude Code even when all your agents are Codex agents. A change typed on the iPhone doesn't.
@@ -332,7 +332,7 @@ cd ~/some/project && /path/to/chums/bin/chums-claude <id>
 
 `<id>` is one of the ids above: the watch and the iPhone talk only to the agents in `agents.json`, and a session is an
 agent's when its name is the agent's id. `bin/chums-claude` adds the Chums channel and hooks, keeps Remote Control on
-(`CHUMS_NO_RC=1` turns it off), keeps the project's own `.mcp.json`, and lets the session call `chums_reply` and read
+(`"remoteControl": false` in `~/.chums/config.json` turns it off), keeps the project's own `.mcp.json`, and lets the session call `chums_reply` and read
 the files you send from the iPhone (`~/.chums/uploads`) without asking. Its
 first start shows the two screens above; answer them in the terminal.
 
@@ -624,7 +624,7 @@ Each one is an environment variable, or a key in `~/.chums/config.json`, or the 
 | `CHUMS_NODE` | `node` | `node` on your PATH | The node binary LaunchAgents run |
 | `CHUMS_WHISPER_MODEL` | | `~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-base` | Whisper model folder |
 | `CHUMS_CLAUDE_BIN` | | `claude` in `~/.local/bin`, `~/.npm-global/bin` or PATH | The claude CLI for the soul editor |
-| `CHUMS_NO_RC` | | unset | Set to `1` to start Claude Code sessions without Remote Control (set when `bin/chums-agents install` runs, it is kept for the background agents) |
+| `CHUMS_NO_RC` | `remoteControl` | on | `"remoteControl": false` starts every Claude Code session without Remote Control (for an API key); `CHUMS_NO_RC=1` does it for the sessions started from that shell |
 | | `tts` | `{ "engine": "kokoro" }` when installed | The voice replies are read in: `kokoro` (each agent's own), `say` (a macOS voice), `openai`, or `watch` |
 | `DEVELOPER_DIR` | | `/Applications/Xcode.app/Contents/Developer` | The Xcode the scripts use |
 
