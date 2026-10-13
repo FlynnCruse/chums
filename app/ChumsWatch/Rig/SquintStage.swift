@@ -16,6 +16,8 @@ import SwiftUI
 /// away and pops back as the new one. Idle, it breathes and its parts drift a hair.
 final class SquintStage: Staged {
     static let shared = SquintStage()
+    /// Each part's spring back to its place, in turns a second: left eye, right eye, mouth, left brow, right brow.
+    static let partSprings: [Double] = [3.6, 3.4, 2.6, 3.0, 2.9]
 
     let ownsApproval = false
     let holds: [ChumsState: Double] = [.done: 2.6, .dizzy: 3.4]
@@ -229,7 +231,7 @@ final class SquintStage: Staged {
         // springs: the shapes blend (a hair of overshoot), each part settles on its own. In steps of at most 1/120 s:
         // stepped once per frame, the shape's spring (26 rad/s) is unstable past about 1/25 s a frame, and a run of slow
         // frames (or the offline renderer at 20 a second) made the eyes grow without end
-        let steps = max(1, Int((dt * 120).rounded(.up))), frameDT = dt
+        let steps = max(1, Int((dt * 120).rounded(.up))), frameDT: Double = dt
         if trauma > 0.05 { for i in 0..<5 { parts[i].v += P2(rnd(-1, 1), rnd(-1, 1)) * trauma * 900 * frameDT } }
         for _ in 0..<steps {
             let dt = frameDT / Double(steps)
@@ -249,8 +251,10 @@ final class SquintStage: Staged {
                     parts[i].scv += (-ws * ws * (parts[i].sc - 1) - 2 * 0.48 * ws * parts[i].scv) * dt
                     parts[i].sc += parts[i].scv * dt
                 }
-                let k = TAU * [3.6, 3.4, 2.6, 3.0, 2.9][i]
-                parts[i].v += (-k * k * parts[i].off - 2 * 0.32 * k * parts[i].v) * dt
+                // in parts, with their types: whole, this was more than Xcode 26.6's type checker would take
+                let k: Double = TAU * Self.partSprings[i]
+                let pull: P2 = parts[i].off * (-k * k), damping: P2 = parts[i].v * (2 * 0.32 * k)
+                parts[i].v += (pull - damping) * dt
                 parts[i].off += parts[i].v * dt
             }
         }
