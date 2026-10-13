@@ -13,8 +13,7 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# "shell: bash" runs steps with -eo pipefail (the default shell has no pipefail): an xcodebuild that fails before
-# "| tail" fails its step
+# "shell: bash" runs steps with -eo pipefail (the default shell has no pipefail)
 defaults:
   run:
     shell: bash
@@ -69,14 +68,18 @@ jobs:
           tools/gen-config.sh
           cd app && CHUMS_BUNDLE=dev.chums.ci xcodegen generate
       - name: Build ChumsWatch for the Simulator
-        # pipefail (defaults above): a failed build fails the step
+        # the whole log in a file; on a failure, the compiler's errors first (with the lines after them), then its end
         run: |
           cd app
           xcodebuild -project Chums.xcodeproj -target ChumsWatch -sdk watchsimulator -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO SYMROOT="$PWD/build/sym" build | tail -40
+            CODE_SIGNING_ALLOWED=NO SYMROOT="$PWD/build/sym" build > build-watch.log 2>&1 ||
+            { grep -A3 -E "error:" build-watch.log | head -120; tail -30 build-watch.log; exit 1; }
+          tail -5 build-watch.log
       - name: Build the iPhone app, its widgets and the watch app inside it, for the Simulator
         # the scheme, not -target with -sdk: -sdk would build the embedded watch widget against the iOS SDK
         run: |
           cd app
           xcodebuild -project Chums.xcodeproj -scheme Chums -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug -derivedDataPath "$PWD/build/dd" CODE_SIGNING_ALLOWED=NO build | tail -40
+            -configuration Debug -derivedDataPath "$PWD/build/dd" CODE_SIGNING_ALLOWED=NO build > build-phone.log 2>&1 ||
+            { grep -A3 -E "error:" build-phone.log | head -120; tail -30 build-phone.log; exit 1; }
+          tail -5 build-phone.log

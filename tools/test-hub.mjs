@@ -85,7 +85,8 @@ ok(st2.spoken.some(l => l.kind === 'echo' && l.agent === MAC), 'so is the echo o
 const ag = Object.fromEntries(st2.agents.map(a => [a.id, a]))
 ok(ag[MAC]?.status === 'idle' && ag[DESIGN]?.status === 'offline', `the agents list says who's running (${st2.agents.map(a => a.id + ':' + a.status).join(', ')})`)
 ok(st2.agents.length >= 8 && st2.agents.every(a => a.character === a.id && a.runtime === 'claude'), `one agent per character, each on Claude Code by default (${st2.agents.length})`)
-ok(Array.isArray(st2.runtimes) && st2.runtimes.includes('claude'), `the state says what an agent can switch to (${st2.runtimes})`)
+// the runtimes installed on this Mac (none on a machine without Claude Code or Codex, like CI)
+ok(Array.isArray(st2.runtimes) && st2.runtimes.every(r => ['claude', 'codex'].includes(r)), `the state says what an agent can switch to (${st2.runtimes})`)
 ok((await call(H, `/v1/agents/${MAC}/runtime`, { runtime: 'gemini' })).status === 400, 'an unknown runtime is refused')
 // its permission mode, from the watch or the iPhone: kept in agents.json, and its session restarts in it (the private
 // hub's bin/chums-agents is a stand-in that notes what it's asked)
