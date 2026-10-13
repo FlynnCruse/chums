@@ -41,7 +41,7 @@ lipo -create "$TMP/Chums-arm64" "$TMP/Chums-x86_64" -output "$B/Contents/MacOS/C
 
 # the icon: Noodle (the public watch app's icon; in this repo the overlay has it, in the public one the app does)
 ICON=""
-for d in "$CHUMS_ROOT"/tools/public-overlay/app "$CHUMS_ROOT"/app; do
+for d in "$CHUMS_ROOT"/app; do
   ICON=$(print -l "$d"/ChumsWatch/Assets.xcassets/AppIcon.appiconset/*.png(N) | head -1); [[ -n $ICON ]] && break
 done
 if [[ -n $ICON ]]; then

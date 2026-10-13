@@ -148,11 +148,21 @@ struct LiveWeb: UIViewRepresentable {
         w.accessibilityIdentifier = "artifact-web"
         switch source {
         case .url(let u): w.load(URLRequest(url: u))
-        case .html(let h): w.loadHTMLString(h, baseURL: URL(string: "about:blank"))
+        case .html(let h): w.loadHTMLString(Self.contained(h), baseURL: URL(string: "about:blank"))
         }
         return w
     }
     func updateUIView(_ w: WKWebView, context: Context) { context.coordinator.loaded = loaded; context.coordinator.failed = failed }
+
+    /// An agent's page with a policy of its own first: it sends no form and gives links no other base. (Going to
+    /// another page and sending a form are also refused below; with no UI delegate, it opens no window.)
+    static func contained(_ html: String) -> String {
+        let policy = #"<meta http-equiv="Content-Security-Policy" content="form-action 'none'; base-uri 'none'">"#
+        if let head = html.range(of: "<head[^>]*>", options: [.regularExpression, .caseInsensitive]) {
+            return html.replacingCharacters(in: head, with: html[head] + policy)
+        }
+        return policy + html
+    }
     func makeCoordinator() -> Coordinator { Coordinator(loaded, failed, html: { if case .html = source { true } else { false } }()) }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
@@ -167,8 +177,10 @@ struct LiveWeb: UIViewRepresentable {
         func webView(_ w: WKWebView, decidePolicyFor a: WKNavigationAction, decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
             if a.navigationType == .linkActivated, let u = a.request.url, ["http", "https"].contains(u.scheme) {
                 UIApplication.shared.open(u); decisionHandler(.cancel)
+            } else if html, a.navigationType == .formSubmitted || a.navigationType == .formResubmitted {
+                decisionHandler(.cancel)                            // a form, in the page or in a frame in it
             } else if html, a.targetFrame?.isMainFrame ?? true, a.request.url?.absoluteString != "about:blank" {
-                decisionHandler(.cancel)                            // a script or a form taking the page somewhere else
+                decisionHandler(.cancel)                            // a script taking the page somewhere else
             } else { decisionHandler(.allow) }
         }
     }

@@ -20,18 +20,19 @@ ids() { "$CHUMS_NODE" -e 'const w=process.argv[1];console.log(JSON.parse(require
 runtime() { "$CHUMS_NODE" -e 'const a=JSON.parse(require("fs").readFileSync(process.env.HOME+"/.chums/agents.json","utf8")).find(a=>a.id===process.argv[1]);console.log(a?(a.runtime??"claude"):"")' "$1" }
 label() { echo "$CHUMS_LABEL_PREFIX.agent.$1" }
 plist() {
+  local xa=$(chums_xml "$APPX") xr=$(chums_xml "$ROOT") xn=$(chums_xml "$CHUMS_NODE") xh=$(chums_xml "$HOME")
   cat > "$LA/$(label $1).plist" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$(label $1)</string>
-  <key>ProgramArguments</key><array><string>$APPX</string><string>/usr/bin/expect</string><string>$ROOT/tools/agent-host.exp</string><string>$1</string></array>
-  <key>EnvironmentVariables</key><dict><key>CHUMS_NODE</key><string>$CHUMS_NODE</string>${CHUMS_NO_RC:+<key>CHUMS_NO_RC</key><string>1</string>}</dict>
+  <key>ProgramArguments</key><array><string>$xa</string><string>/usr/bin/expect</string><string>$xr/tools/agent-host.exp</string><string>$1</string></array>
+  <key>EnvironmentVariables</key><dict><key>CHUMS_NODE</key><string>$xn</string>${CHUMS_NO_RC:+<key>CHUMS_NO_RC</key><string>1</string>}</dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>30</integer>
-  <key>StandardOutPath</key><string>$HOME/.chums/agents/$1.launchd.log</string>
-  <key>StandardErrorPath</key><string>$HOME/.chums/agents/$1.launchd.log</string>
+  <key>StandardOutPath</key><string>$xh/.chums/agents/$1.launchd.log</string>
+  <key>StandardErrorPath</key><string>$xh/.chums/agents/$1.launchd.log</string>
 </dict></plist>
 PL
 }

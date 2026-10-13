@@ -107,18 +107,19 @@ if (( LAUNCHD )); then
   # a LaunchAgent gets no shell PATH: node's and whisperkit-cli's folders, then Homebrew's (Apple silicon, Intel)
   WK=$(command -v whisperkit-cli 2>/dev/null)
   HUBPATH=${CHUMS_NODE:h}${WK:+:${WK:h}}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+  xa=$(chums_xml "$APPX") xr=$(chums_xml "$ROOT") xn=$(chums_xml "$CHUMS_NODE") xh=$(chums_xml "$HOME") xp=$(chums_xml "$HUBPATH")
   cat > $hub <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$CHUMS_LABEL_PREFIX.hub</string>
-  <key>ProgramArguments</key><array><string>$APPX</string><string>/usr/bin/caffeinate</string><string>-s</string><string>$CHUMS_NODE</string><string>$ROOT/hub/hub.mjs</string></array>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$HUBPATH</string></dict>
+  <key>ProgramArguments</key><array><string>$xa</string><string>/usr/bin/caffeinate</string><string>-s</string><string>$xn</string><string>$xr/hub/hub.mjs</string></array>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$xp</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Interactive</string>
-  <key>StandardOutPath</key><string>$HOME/.chums/hub.log</string>
-  <key>StandardErrorPath</key><string>$HOME/.chums/hub.log</string>
+  <key>StandardOutPath</key><string>$xh/.chums/hub.log</string>
+  <key>StandardErrorPath</key><string>$xh/.chums/hub.log</string>
 </dict></plist>
 PL
   chums_reload $CHUMS_LABEL_PREFIX.hub $hub && ok "hub: $hub (log ~/.chums/hub.log)"
@@ -129,10 +130,10 @@ PL
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$CHUMS_LABEL_PREFIX.tailscaled</string>
-  <key>ProgramArguments</key><array><string>$APPX</string><string>$(command -v tailscaled)</string><string>--tun=userspace-networking</string>
-    <string>--statedir=$HOME/.chums/tailscale</string><string>--socket=$HOME/.chums/tailscale/tailscaled.sock</string><string>--port=0</string></array>
+  <key>ProgramArguments</key><array><string>$xa</string><string>$(chums_xml "$(command -v tailscaled)")</string><string>--tun=userspace-networking</string>
+    <string>--statedir=$xh/.chums/tailscale</string><string>--socket=$xh/.chums/tailscale/tailscaled.sock</string><string>--port=0</string></array>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$HOME/.chums/tailscale/tailscaled.log</string><key>StandardErrorPath</key><string>$HOME/.chums/tailscale/tailscaled.log</string>
+  <key>StandardOutPath</key><string>$xh/.chums/tailscale/tailscaled.log</string><key>StandardErrorPath</key><string>$xh/.chums/tailscale/tailscaled.log</string>
 </dict></plist>
 PL
     chums_reload $CHUMS_LABEL_PREFIX.tailscaled $tsd && ok "tailscaled: $tsd"

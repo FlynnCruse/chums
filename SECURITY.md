@@ -104,7 +104,9 @@ To take the watch API off the internet at once: `tailscale --socket ~/.chums/tai
 - `chums_show` can show any file the session can read: a text file is shown as text, and the file is kept (up to
   25 MB) in `~/.chums/artifacts` for the iPhone to open.
 - An HTML or SVG file a session showed or you sent is served to the iPhone with `Content-Security-Policy: sandbox
-  allow-scripts`: its scripts run, in an origin of their own, not the hub's.
+  allow-scripts`: its scripts run, in an origin of their own, not the hub's. The iPhone app shows it in a web view
+  of its own that keeps nothing between pages: its scripts run, but it can't go to another page, send a form or open
+  a window, and a link you tap opens in Safari.
 - Speech is transcribed on the Mac by WhisperKit, and the replies are spoken by Kokoro on the Mac. Audio is not sent
   to a third party by Chums. Instructions you speak go to the agent (Claude Code or Codex), which sends them to its
   provider like any other prompt. With `"tts": { "engine": "openai" }` in `~/.chums/config.json`, the text of every

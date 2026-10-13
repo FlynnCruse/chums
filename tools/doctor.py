@@ -254,6 +254,8 @@ elif cfg is None:
 else:
     mode = os.stat(CONFIG).st_mode & 0o777
     if mode & 0o077: warn(f'~/.chums/config.json is readable by other users (mode {oct(mode)[2:]}); it holds the tokens', 'chmod 600 ~/.chums/config.json')
+    dmode = os.stat(os.path.dirname(CONFIG)).st_mode & 0o777
+    if dmode & 0o077: warn(f'~/.chums is open to other users (mode {oct(dmode)[2:]}); it holds your conversations and uploads', 'chmod 700 ~/.chums (the hub does it when it starts)')
     if cfg.get('token') and cfg.get('watchToken'): ok(f'~/.chums/config.json: ports {cfg.get("port", 7717)} and {cfg.get("publicPort", 7718)}, both tokens set (not shown)')
     else: fail('~/.chums/config.json is missing a token', ['restart the hub: it adds the missing token', 'then bin/chums-install, so the watch app gets it'])
     if cfg.get('publicURL'): ok(f'public URL {cfg["publicURL"]}')

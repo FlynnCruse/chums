@@ -55,6 +55,7 @@ echo "Watch: $WNAME"
 
 "$ROOT/tools/gen-config.sh"
 cd "$ROOT/app"
+mkdir -p build && chmod 700 build                 # the built apps hold the watch token: readable by you only
 
 # Sign with a paid team if Xcode has one, else your free Personal Team (installs expire after 7 days).
 : ${CHUMS_TEAM:=$(chums_cfg team)}; export CHUMS_TEAM

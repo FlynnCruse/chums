@@ -11,6 +11,10 @@ CHUMS_HOME=~/.chums
 CHUMS_CONFIG=$CHUMS_HOME/config.json
 
 # chums_cfg <key>: a value from ~/.chums/config.json, or nothing
+# a value written into a LaunchAgent's XML, or into a JSON string (a path with &, <, " or \ in it)
+chums_xml() { local s=${1//&/&amp;}; s=${s//</&lt;}; print -rn -- ${s//>/&gt;} }
+chums_json() { local s=${1//\\/\\\\}; print -rn -- ${s//\"/\\\"} }
+
 chums_cfg() {
   [[ -f $CHUMS_CONFIG ]] || return 0
   python3 -c 'import json,sys

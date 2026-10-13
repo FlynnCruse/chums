@@ -14,9 +14,11 @@ command -v node >/dev/null 2>&1 || die "node is not installed (the channel and t
 [[ -d "$CHUMS_ROOT/node_modules/@modelcontextprotocol/sdk" ]] || die "the npm packages aren't installed. Run bin/chums-setup (or npm ci in $CHUMS_ROOT)."
 command -v claude >/dev/null 2>&1 ||
   die "claude is not on PATH. Install Claude Code (curl -fsSL https://claude.ai/install.sh | bash), or add its folder (often ~/.local/bin) to PATH."
+# a path inside a JSON string
+jstr() { local s=${1//\\/\\\\}; print -rn -- ${s//\"/\\\"} }
 MCP_JSON="$CHUMS_ROOT/channel/mcp.json"
 cat > "$MCP_JSON" <<EOF
-{ "mcpServers": { "chums": { "command": "node", "args": ["$CHUMS_ROOT/channel/chums-channel.mjs"] } } }
+{ "mcpServers": { "chums": { "command": "node", "args": ["$(jstr "$CHUMS_ROOT/channel/chums-channel.mjs")"] } } }
 EOF
 
 if [[ -n "$1" && "$1" != -* ]]; then export CHUMS_NAME="$1"; shift; fi
@@ -27,7 +29,8 @@ if [[ -n "$1" && "$1" != -* ]]; then export CHUMS_NAME="$1"; shift; fi
 # Hooks report what the session is doing to the hub: tool calls and failures, permission requests, notifications,
 # prompts, stops and stop failures, compaction, subagents, session start and end. See design/STATES.md.
 HOOKS_JSON="$CHUMS_ROOT/channel/hooks.json"
-HOOK="node '$CHUMS_ROOT/channel/chums-hook.mjs'"
+hook=$CHUMS_ROOT/channel/chums-hook.mjs
+HOOK=$(jstr "node ${(qq)hook}")                  # quoted for the shell, then for JSON: any folder name works
 cat > "$HOOKS_JSON" <<EOF
 { "permissions": { "deny": ["Edit(~/.chums/souls/**)", "Write(~/.chums/souls/**)", "MultiEdit(~/.chums/souls/**)", "AskUserQuestion"], "allow": ["Read(~/.chums/uploads/**)"] },
   "hooks": {

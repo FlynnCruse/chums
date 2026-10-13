@@ -12,6 +12,7 @@ NAME="Chums Watch"
 
 "$ROOT/tools/gen-config.sh" >/dev/null
 cd "$ROOT/app"
+mkdir -p build && chmod 700 build                 # the built apps hold the watch token: readable by you only
 : ${CHUMS_BUNDLE:=$(chums_cfg bundleId)}
 : ${CHUMS_BUNDLE:=dev.chums}
 export CHUMS_BUNDLE
