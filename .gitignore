@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+
+# Xcode: the project and the Info.plists are generated from app/project.yml (xcodegen generate)
+app/build/
+app/Chums.xcodeproj/
+app/ChumsPhone/Info.plist
+app/ChumsWatch/Info.plist
+app/ChumsWidget/Info.plist
+app/ChumsPhoneWidgets/Info.plist
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# generated per machine: they hold your hub token or absolute paths
+app/ChumsWatch/HubConfig.swift
+channel/mcp.json
+channel/hooks.json
+.env
+.env.*
+
+# macOS, Python, Blender
+.DS_Store
+__pycache__/
+*.pyc
+*.blend1
+design/characters/**/*.npz
+
+# Blender renders: the raw frames and logs stay local
+design/noodle/renders/*.png
+design/noodle/renders/*.log
+design/noodle/renders/anim/
+design/noodle/renders/preview/
+design/noodle/renders/preview.log
+
+# logs
+*.log
+.claude/

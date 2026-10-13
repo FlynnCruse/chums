@@ -1,0 +1,25 @@
+<meta charset="utf-8">
+<title>Pix sheet</title>
+<body style="margin:0;background:#222">
+<canvas id="c"></canvas>
+<script src="pix.js"></script>
+<script>
+// renders a contact sheet: each cell is a 198 × 242 watch screen at 2×
+window.renderSheet = (cells, cols = 6) => {
+  const S = 2, w = 198, h = 242, pad = 8, lab = 14, rows = Math.ceil(cells.length / cols);
+  const c = document.getElementById('c'); c.width = cols * (w * S + pad) + pad; c.height = rows * (h * S + pad + lab) + pad;
+  const g = c.getContext('2d'); g.fillStyle = '#222'; g.fillRect(0, 0, c.width, c.height);
+  cells.forEach((cell, i) => {
+    const x = pad + (i % cols) * (w * S + pad), y = pad + Math.floor(i / cols) * (h * S + pad + lab);
+    g.fillStyle = '#ccc'; g.font = '12px monospace'; g.fillText(cell.label || cell.state, x, y + 11);
+    g.save(); g.translate(x, y + lab); g.scale(S, S);
+    g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+    g.beginPath(); g.rect(0, 0, w, h); g.clip();
+    (cell.extra || []).forEach(e => PIX.draw(g, e));
+    PIX.draw(g, { cx: 99, cy: 130, px: 7, t: 1, stateT: 1, look: 1, ...cell });
+    g.restore();
+  });
+  return c.toDataURL('image/png');
+};
+</script>
+</body>

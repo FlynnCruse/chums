@@ -1,0 +1,61 @@
+name: Bug report
+description: Something in the watch app, the hub or the channel doesn't work.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove tokens, absolute paths under your home folder and device IDs from anything you paste.
+        Security problems go through private reporting instead (see SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. bin/chums-hub
+        2. …
+    validations:
+      required: true
+  - type: dropdown
+    id: part
+    attributes:
+      label: Where
+      options:
+        - Watch app (device)
+        - Watch app (Simulator)
+        - Hub
+        - Channel or hooks (Claude Code)
+        - Codex agents
+        - Tailscale Funnel
+        - Background agents
+        - Setup scripts (bin/)
+        - iPhone app or widgets
+        - Design tools
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: macOS, watchOS, iOS, Xcode, Node.js, Claude Code (claude --version) or Codex (codex --version), and the Chums commit.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: bin/chums-doctor
+      description: The output of bin/chums-doctor (it never prints tokens). docs/troubleshooting.md covers the known problems.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The hub's output (terminal or ~/.chums/hub.log) around the problem, and for the watch or the iPhone, ~/.chums/watch-events.log.
+      render: text

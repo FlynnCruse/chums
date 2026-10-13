@@ -1,0 +1,14 @@
+#!/bin/zsh
+# Checks the whole chain, from the tools on this Mac to the watch, and prints a pass/fail list with the fix for each
+# failure. Read-only: it starts, stops, writes and installs nothing, and never prints the tokens. Safe to run any time.
+#   bin/chums-doctor           exit code 0 when nothing failed, 1 otherwise (NO_COLOR=1: no colours)
+# The checks are in tools/doctor.py.
+ROOT="${0:A:h:h}"
+# python3 comes with Xcode or its command line tools; without either, macOS would offer to install them in a dialog
+if ! xcode-select -p >/dev/null 2>&1; then
+  print "Chums doctor"
+  print "  FAIL  no Xcode or command line tools on this Mac (the checks run on their python3)"
+  print "        fix: install Xcode 26 from the App Store and open it once (or, for now: xcode-select --install)"
+  exit 1
+fi
+exec /usr/bin/env python3 "$ROOT/tools/doctor.py" "$@"

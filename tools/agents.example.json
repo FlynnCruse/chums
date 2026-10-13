@@ -1,0 +1,35 @@
+[
+  {
+    "id": "noodle",
+    "name": "Noodle",
+    "character": "noodle",
+    "runtime": "claude",
+    "cwd": "/Users/you/Developer/chums",
+    "addDirs": [
+      "/Users/you/Developer"
+    ],
+    "guide": ""
+  },
+  {
+    "id": "squint",
+    "name": "Squint",
+    "character": "squint",
+    "runtime": "claude",
+    "cwd": "/Users/you/.chums/agents/squint",
+    "addDirs": [
+      "/Users/you"
+    ],
+    "guide": "To see an app or a page, use chums_show with screenshot (and open: a URL to open it in Safari first). To read or click inside a page you're logged in to, run JavaScript in Safari with osascript (Safari's do JavaScript; it needs Develop › Allow JavaScript from Apple Events)."
+  },
+  {
+    "id": "ray",
+    "name": "Ray",
+    "character": "ray",
+    "runtime": "codex",
+    "cwd": "/Users/you/Developer",
+    "addDirs": [
+      "/Users/you"
+    ],
+    "model": "gpt-6-astra"
+  }
+]

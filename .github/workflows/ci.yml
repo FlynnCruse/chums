@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# a newer push to the same branch or pull request cancels the run before it
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# "shell: bash" runs steps with -eo pipefail (the default shell has no pipefail): an xcodebuild that fails before
+# "| tail" fails its step
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  node-tests:
+    name: Hub and channel tests
+    # macOS: the hub renders pages with WebKit (tools/page-shot.swift) and images with sips
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Channel test (hub + channel, no Claude Code)
+        run: node tools/test-channel.mjs
+      - name: Hub test (no model calls)
+        run: node tools/test-hub.mjs
+        env:
+          CHUMS_TEST_NO_MODEL: '1'
+      - name: Artifacts test (every kind of file made into a picture, and the routes the iPhone opens them by)
+        run: node tools/test-artifacts.mjs
+      - name: Runtimes test (Codex, Copilot and ACP drivers against stand-ins; no model calls)
+        run: node tools/test-runtimes.mjs
+
+  app-build:
+    name: Watch and iPhone apps build (Simulator, unsigned)
+    # the app targets watchOS 26, so it needs Xcode 26
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the Xcode version
+        run: |
+          xcodebuild -version
+          [ "$(xcodebuild -version | sed -n 's/^Xcode \([0-9]*\).*/\1/p')" -ge 26 ] ||
+            { echo "::error::The apps need Xcode 26 or later; select one with sudo xcode-select -s /Applications/Xcode_26.x.app"; exit 1; }
+      - name: Install XcodeGen
+        run: brew install xcodegen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      - name: Stand-in hub config (tools/gen-config.sh reads it)
+        run: |
+          mkdir -p ~/.chums
+          echo '{"port": 7717, "publicPort": 7718, "token": "ci", "watchToken": "ci"}' > ~/.chums/config.json
+      - name: Generate the project
+        run: |
+          tools/gen-config.sh
+          cd app && CHUMS_BUNDLE=dev.chums.ci xcodegen generate
+      - name: Build ChumsWatch for the Simulator
+        # pipefail (defaults above): a failed build fails the step
+        run: |
+          cd app
+          xcodebuild -project Chums.xcodeproj -target ChumsWatch -sdk watchsimulator -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO SYMROOT="$PWD/build/sym" build | tail -40
+      - name: Build the iPhone app, its widgets and the watch app inside it, for the Simulator
+        # the scheme, not -target with -sdk: -sdk would build the embedded watch widget against the iOS SDK
+        run: |
+          cd app
+          xcodebuild -project Chums.xcodeproj -scheme Chums -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug -derivedDataPath "$PWD/build/dd" CODE_SIGNING_ALLOWED=NO build | tail -40

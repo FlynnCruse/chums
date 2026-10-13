@@ -1,0 +1,35 @@
+#!/bin/zsh
+# Puts the hub's watch API (127.0.0.1:7718, nothing else) on the internet with Tailscale Funnel, so the watch reaches
+# the Mac over whatever network it has: the iPhone in your pocket, Wi-Fi or cellular, at home or away. watchOS
+# doesn't support apps talking to a home-network address (TN3135), so this is the watch's real way to the Mac.
+# tailscaled runs without admin rights (userspace networking); its state is in ~/.chums/tailscale.
+# First run: sign in at the link it prints (and allow Funnel if it asks), then run bin/chums-install.
+set -e
+source "${0:A:h:h}/tools/common.zsh"
+chums_help "$@"
+chums_need tailscale "Install it with: brew install tailscale (the open-source CLI and tailscaled, not the App Store app)"
+chums_need tailscaled "Install it with: brew install tailscale"
+chums_need_config
+DIR=~/.chums/tailscale; SOCK=$DIR/tailscaled.sock; mkdir -p $DIR
+ts() { tailscale --socket="$SOCK" "$@" }
+if ! ts status --json >/dev/null 2>&1; then
+  if [[ -f ~/Library/LaunchAgents/$CHUMS_LABEL_PREFIX.tailscaled.plist ]]; then launchctl kickstart -k gui/$UID/$CHUMS_LABEL_PREFIX.tailscaled
+  else nohup tailscaled --tun=userspace-networking --statedir=$DIR --socket=$SOCK --port=0 >> $DIR/tailscaled.log 2>&1 &; fi
+  sleep 2
+fi
+if ! ts status >/dev/null 2>&1; then
+  echo "Signing Chums' tailscaled in to your tailnet: open the link below, sign in and connect the machine (first time only)."
+  ts up --hostname=chums-hub
+fi
+PORT=$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.chums/config.json'))).get('publicPort', 7718))")
+echo "Turning on Funnel for 127.0.0.1:$PORT. If a link appears, open it and approve: it turns on HTTPS certificates and Funnel."
+ts funnel --bg $PORT
+HOST=$(ts status --json | python3 -c "import json,sys;print(json.load(sys.stdin)['Self']['DNSName'].rstrip('.'))")
+python3 - "https://$HOST" <<'PY'
+import json, os, sys
+p = os.path.expanduser('~/.chums/config.json'); c = json.load(open(p)); c['publicURL'] = sys.argv[1]
+json.dump(c, open(p, 'w'), indent=2); os.chmod(p, 0o600)
+PY
+echo "The watch API is at https://$HOST (Tailscale Funnel). Run bin/chums-install to build it into the watch app."
+echo "A new Funnel name can take up to 10 minutes (it has taken about 25) to appear in public DNS."
+echo "bin/chums-doctor checks it from outside: public DNS, then a request through Funnel."

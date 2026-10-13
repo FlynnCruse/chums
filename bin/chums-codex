@@ -1,0 +1,25 @@
+#!/bin/zsh
+# A Codex terminal on a Codex agent's own thread, connected to the app-server the hub runs for it (not a copy):
+# what the watch says to the agent shows here as it happens, and what you type here goes to the same agent. The watch
+# shows that work's status and tool calls too; only turns from the watch are spoken on it. An approval shows in both
+# places, and the first answer wins. Quitting the terminal leaves the agent running for the watch.
+#   chums-codex [id] [codex args…]     (no id: the only Codex agent in ~/.chums/agents.json)
+source "${0:A:h:h}/tools/common.zsh"
+chums_help "$@"
+[[ -x "$CHUMS_NODE" ]] || chums_die "node not found. Install Node.js 20.11 or later (brew install node), or set CHUMS_NODE."
+[[ -f ~/.chums/agents.json ]] || chums_die "no ~/.chums/agents.json yet. Start the hub once (bin/chums-hub); it writes the defaults."
+NODE=$CHUMS_NODE
+CODEX=$(command -v codex || echo ~/.npm-global/bin/codex)
+[[ -x "$CODEX" ]] || chums_die "codex is not installed. Install it with: npm install -g @openai/codex (or brew install --cask codex), then codex login"
+ids=($($NODE -e 'console.log(JSON.parse(require("fs").readFileSync(process.env.HOME+"/.chums/agents.json","utf8")).filter(a=>a.runtime==="codex").map(a=>a.id).join(" "))'))
+id=$1; [[ -n "$id" ]] && shift
+if [[ -z "$id" ]]; then
+  (( ${#ids} == 1 )) && id=$ids[1] || { echo "Which Codex agent? ${ids:-none in ~/.chums/agents.json}"; exit 1 }
+fi
+(( ${ids[(Ie)$id]} )) || { echo "$id isn't a Codex agent (\"runtime\": \"codex\" in ~/.chums/agents.json)"; exit 1 }
+rt=~/.chums/agents/$id.runtime.json
+[[ -f $rt ]] || { echo "$id hasn't started in the hub yet (is the hub running? its log: ~/.chums/agents/$id.host.log)"; exit 1 }
+field() { $NODE -e 'console.log(require(process.argv[1])[process.argv[2]])' $rt $1 }
+thread=$(field thread); sock=$(field socket); cwd=$(field cwd)
+[[ -S "$sock" ]] || { echo "the hub's Codex app-server for $id isn't running ($sock is missing)"; exit 1 }
+cd "$cwd" && exec "$CODEX" resume "$thread" --remote "unix://$sock" "$@"

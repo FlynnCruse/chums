@@ -1,0 +1,8 @@
+#!/bin/zsh
+# Run the Chums hub (Mac side). Logs to the terminal; config and token live in ~/.chums/config.json.
+# It runs until stopped (Ctrl-C). To run it in the background at login instead: bin/chums-setup --launchd.
+[[ $1 == (-h|--help) ]] && { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 }
+command -v node >/dev/null 2>&1 || { echo "chums: node is not installed. Install Node.js 20.11 or later (brew install node)." >&2; exit 1 }
+node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 20 || (a == 20 && b >= 11) ? 0 : 1)' ||
+  { echo "chums: node $(node -v) is too old. The hub needs Node.js 20.11 or later (brew upgrade node)." >&2; exit 1 }
+exec node "${0:A:h:h}/hub/hub.mjs"

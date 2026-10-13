@@ -1,0 +1,61 @@
+#!/bin/zsh
+# Start an interactive Claude Code session that the watch can reach:
+#   - loads the Chums channel (orders in, spoken replies out, approvals both ways)
+#   - keeps Remote Control on, so the same session still shows in the Claude app
+#   - keeps the project's own .mcp.json if it has one
+# Usage: chums-claude <agent id> [extra claude args...]   e.g. chums-claude noodle (the watch and the iPhone reach a
+# session named after one of the agents in ~/.chums/agents.json; without a name it's the folder's, which they can't)
+
+[[ $1 == (-h|--help) ]] && { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 }
+CHUMS_ROOT="${0:A:h:h}"
+die() { echo "chums: $*" >&2; exit 1 }
+[[ -f ~/.chums/config.json ]] || die "no ~/.chums/config.json yet. Start the hub once (bin/chums-hub), then run this again."
+command -v node >/dev/null 2>&1 || die "node is not installed (the channel and the hooks run on it). Install Node.js 20.11 or later (brew install node)."
+[[ -d "$CHUMS_ROOT/node_modules/@modelcontextprotocol/sdk" ]] || die "the npm packages aren't installed. Run bin/chums-setup (or npm ci in $CHUMS_ROOT)."
+command -v claude >/dev/null 2>&1 ||
+  die "claude is not on PATH. Install Claude Code (curl -fsSL https://claude.ai/install.sh | bash), or add its folder (often ~/.local/bin) to PATH."
+MCP_JSON="$CHUMS_ROOT/channel/mcp.json"
+cat > "$MCP_JSON" <<EOF
+{ "mcpServers": { "chums": { "command": "node", "args": ["$CHUMS_ROOT/channel/chums-channel.mjs"] } } }
+EOF
+
+if [[ -n "$1" && "$1" != -* ]]; then export CHUMS_NAME="$1"; shift; fi
+
+# Photos and files sent from the iPhone land in ~/.chums/uploads: the session reads them without asking (it was sent
+# them to read); it never edits its soul files itself; and it can't open Claude Code's question dialog (AskUserQuestion),
+# which only this terminal shows: it asks on the watch and the iPhone instead, with chums_reply (status 'question').
+# Hooks report what the session is doing to the hub: tool calls and failures, permission requests, notifications,
+# prompts, stops and stop failures, compaction, subagents, session start and end. See design/STATES.md.
+HOOKS_JSON="$CHUMS_ROOT/channel/hooks.json"
+HOOK="node '$CHUMS_ROOT/channel/chums-hook.mjs'"
+cat > "$HOOKS_JSON" <<EOF
+{ "permissions": { "deny": ["Edit(~/.chums/souls/**)", "Write(~/.chums/souls/**)", "MultiEdit(~/.chums/souls/**)", "AskUserQuestion"], "allow": ["Read(~/.chums/uploads/**)"] },
+  "hooks": {
+  "PreToolUse":          [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "PostToolUse":         [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "PostToolUseFailure":  [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "PermissionRequest":   [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "PermissionDenied":    [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "Notification":        [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "StopFailure":         [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "SubagentStart":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "SubagentStop":        [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "PreCompact":          [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "PostCompact":         [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "SessionStart":        [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "SessionEnd":          [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "UserPromptSubmit":    [{ "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
+  "Stop":                [{ "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }]
+} }
+EOF
+
+configs=(--mcp-config "$MCP_JSON")
+[[ -f ./.mcp.json ]] && configs+=(--mcp-config ./.mcp.json)
+
+rc=(--remote-control)
+[[ -n "$CHUMS_NO_RC" ]] && rc=()
+
+# Speaking to the watch is always allowed; a reply that waits on an approval would never be heard.
+exec command claude "${configs[@]}" "${rc[@]}" --settings "$HOOKS_JSON" \
+  --allowedTools mcp__chums__chums_reply \
+  --dangerously-load-development-channels server:chums "$@"

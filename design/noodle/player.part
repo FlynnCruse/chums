@@ -1,0 +1,245 @@
+  // Noodle: a gel puppet rendered in Blender (noodle/noodle.blend), animated in noodle/animate.py at 24 fps.
+  // Each state is a pool of segments: a calm rest loop and several beats that start and end on the same pose. The
+  // player chains them at random (never the same beat twice in a row), so a minute of listening or thinking doesn't
+  // repeat. clips.json says, frame by frame, where its hair top, face and the glass contact are on screen, so the
+  // screen plays along: the approval card rides on its hair, tool calls drop on its head and get bonked away, the glass
+  // fogs and ripples where it knocks.
+  const NOODLE = (() => {
+    const META = /*NOODLE_CLIPS*/null;
+    const FPS = META?.fps ?? 24, FW = META?.w ?? 396, FH = META?.h ?? 484, COLS = 8, PAGE = 64, EXT = META?.ext ?? 'avif', DIR = 'noodle/renders/';
+    const CL = META?.clips ?? {}, CHANCE = META?.beat_chance ?? {};
+    const pages = {};
+    const page = (name, p) => { const k = name + '-' + p; let im = pages[k]; if (!im) { im = new Image(); im.decoding = 'async'; im.src = `${DIR}clip-${name}-${p}.${EXT}`; pages[k] = im; } return im; };
+    const stills = {};
+    const still = s => { let im = stills[s]; if (!im) { im = new Image(); im.src = `${DIR}state-${s}.${EXT}`; stills[s] = im; } return im; };
+    const ready = name => { const c = CL[name]; if (!c) return false; for (let p = 0; p * PAGE < c.n; p++) { const im = page(name, p); if (!im.complete || !im.naturalWidth) return false; } return true; };
+    const load = name => { const c = CL[name]; if (c) for (let p = 0; p * PAGE < c.n; p++) page(name, p); };
+    const of = (state, role) => Object.keys(CL).filter(k => CL[k].state === state && CL[k].role === role);
+    const KIND = { read: 'work_read', search: 'work_search', edit: 'work_edit', run: 'work_run' };
+    const CALLS = [['read', 'Read hub.mjs'], ['search', 'Grep onSpoken'], ['edit', 'Edit hub.mjs'], ['run', 'Bash npm test'],
+      ['read', 'Read Voice.swift'], ['search', 'Glob **/*.swift'], ['edit', 'Edit Voice.swift'], ['run', 'Bash swift build']];
+    const n = { clip: 'idle_rest', f: 0, queue: [], fade: null, bags: {}, last: null, work: 'work_read', callT: 3, callI: 0,
+      tool: null, card: null, fx: [], fog: 0, zT: 0, held: false, flex: 0 };
+    const meta = name => CL[name];
+    const count = name => CL[name]?.n ?? 1;
+    const isLoop = name => !!CL[name]?.loop;
+    const restFor = s => s === 'working' ? n.work : of(s, 'rest')[0] ?? 'idle_rest';
+    const frameNo = () => {
+      if (n.held) return Math.round(clamp(hold, 0, 1) * (count('approval_hold') - 1));
+      const c = count(n.clip); return isLoop(n.clip) ? Math.floor(n.f) % c : Math.min(c - 1, Math.floor(n.f));
+    };
+    const clipNow = () => n.held ? 'approval_hold' : n.clip;
+    // where things are on screen this frame: hair top, face, roll, how hard it presses the glass
+    function anchors() {
+      const fr = CL[clipNow()]?.frames?.[frameNo()];
+      return fr ? { hx: fr[0], hy: fr[1], fx: fr[2], fy: fr[3], roll: fr[4], press: fr[5], rise: fr[6] } : { hx: 120, hy: 40, fx: 96, fy: 120, roll: 0, press: 0, rise: 0 };
+    }
+    function current() {
+      const name = clipNow(), f = frameNo(), p = Math.floor(f / PAGE), i = f % PAGE, im = page(name, p);
+      if (im.complete && im.naturalWidth) return { im, sx: (i % COLS) * FW, sy: Math.floor(i / COLS) * FH, sw: FW, sh: FH };
+      const s = still(state === 'approval' ? 'working' : state);
+      return { im: s, sx: 0, sy: 0, sw: s.naturalWidth || FW, sh: s.naturalHeight || FH };
+    }
+    function play(name, { from = 0, then = [], dissolve = true } = {}) {
+      if (!meta(name)) return;
+      if (dissolve) n.fade = { fr: current(), t: 0 };
+      n.clip = name; n.f = from; n.queue = then; n.held = false;
+      if (name === 'approval_in') n.card = { phase: 'fall', x: 99, y: 38, rot: 0 };
+      if (name === 'bump') { const [kind, text] = CALLS[n.callI++ % CALLS.length]; n.tool = { text, phase: 'fall', kind }; }
+    }
+    // the next segment of the state's pool: its rest loop again, or a beat (never the same one twice in a row)
+    function nextSegment() {
+      const beats = of(state, 'beat').filter(ready);
+      if (beats.length && Math.random() < (CHANCE[state] ?? .4)) {
+        let bag = n.bags[state];
+        if (!bag?.length) { bag = n.bags[state] = [...beats].sort(() => Math.random() - .5); if (bag.length > 1 && bag[bag.length - 1] === n.last) bag.unshift(bag.pop()); }
+        n.last = bag.pop(); return play(n.last, { dissolve: false });
+      }
+      play(restFor(state), { dissolve: false });
+    }
+    function next() {
+      const q = n.queue.shift();
+      if (q) return play(q, { then: n.queue, dissolve: false });
+      const r = meta(n.clip)?.role;
+      // segments of the current state end on its rest pose; anything else (a reaction, another state's clip) dissolves in
+      const seamless = meta(n.clip)?.state === state && ['rest', 'beat', 'enter'].includes(r) || (n.clip === 'bump' && state === 'working');
+      if (seamless) return nextSegment();
+      play(restFor(state), { dissolve: true });
+    }
+    function event(name, kind) {
+      const a = anchors();
+      if (kind === 'contact') { n.fx.push({ k: 'glass', x: a.fx, y: a.fy + 6, t: 0 }); n.flex = 1; click(true); }
+      if (kind === 'apex') for (let i = 0; i < 22; i++) {
+        const ang = -Math.PI / 2 + (Math.random() - .5) * 2.4, sp = 70 + Math.random() * 110;
+        n.fx.push({ k: 'confetti', x: a.hx, y: a.hy + 10, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r: Math.random() * TAU, vr: (Math.random() - .5) * 12,
+          c: ['#FFB020', '#FF5FAE', '#F4F5F6', '#FF7A3D', '#7FE0B0'][i % 5], t: 0 });
+      }
+      if (kind === 'bonk') { n.fx.push({ k: 'bonk', x: a.hx - 8, y: a.hy, t: 0 }); click(true); }
+      if (kind === 'land' && name === 'bump' && n.tool) { n.tool.phase = 'ride'; click(); }
+      if (kind === 'launch' && name === 'bump' && n.tool) Object.assign(n.tool, { phase: 'fly', vx: 170, vy: -150, vr: 5, rot: 0 });
+      if (kind === 'land' && name === 'approval_in' && n.card) { n.card.phase = 'ride'; click(true); }
+      if (kind === 'launch' && name === 'approval_allow' && n.card) Object.assign(n.card, { phase: 'fly', vx: 40, vy: -420, vr: 3.2 });
+      if (kind === 'drop' && name === 'approval_deny' && n.card) Object.assign(n.card, { phase: 'drop', vx: -30, vy: 20, vr: -2.4 });
+    }
+    // cards come in and leave from under the status row, as if from behind the bezel
+    function card(ctx, c, w, h, draw) {
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 38, 198, 204); ctx.clip(); ctx.translate(c.x, c.y); ctx.rotate((c.rot ?? 0)); ctx.translate(-w / 2, -h); draw(); ctx.restore();
+    }
+    // a knock on the glass: a ring of liquid glass runs out from the contact and refracts the frame under it.
+    // Each thin band of the ring redraws what's under it magnified or shrunk around the contact point (a lens ridge:
+    // magnified on the inner slope, compressed on the outer), with a specular edge where it catches the light.
+    let snap = null;
+    function glass(ctx, q) {
+      const k = q.t / 1.1; if (k >= 1) return;
+      const R = 16 + 150 * outC(k), wid = 16 + 26 * k, A = .16 * Math.pow(1 - k, 1.5);
+      const cv = ctx.canvas;
+      if (!snap || snap.width !== cv.width || snap.height !== cv.height) { snap = document.createElement('canvas'); snap.width = cv.width; snap.height = cv.height; }
+      const sg = snap.getContext('2d'); sg.setTransform(1, 0, 0, 1, 0, 0); sg.clearRect(0, 0, snap.width, snap.height); sg.drawImage(cv, 0, 0);
+      const lens = (r0, r1, s) => { ctx.save(); ctx.beginPath(); ctx.arc(q.x, q.y, r1, 0, TAU); if (r0 > 0) ctx.arc(q.x, q.y, r0, 0, TAU, true); ctx.clip();
+        ctx.translate(q.x, q.y); ctx.scale(s, s); ctx.translate(-q.x, -q.y); ctx.drawImage(snap, 0, 0, 198, 242); ctx.restore(); };
+      // the contact point bulges toward you for an instant
+      if (k < .3) lens(0, Math.max(4, R - wid / 2), 1 + .05 * (1 - k / .3));
+      // the ridge: magnified on its inner slope, compressed on the outer one
+      const BANDS = 18;
+      for (let i = 0; i < BANDS; i++) {
+        const u0 = i / BANDS, u1 = (i + 1) / BANDS, um = (u0 + u1) / 2;
+        lens(Math.max(0, R - wid / 2 + wid * u0), R - wid / 2 + wid * u1, 1 + A * Math.cos(Math.PI * um));
+      }
+      // shading across the ridge, so it reads as a bump of glass even over black: a soft highlight, then a soft shade
+      const a = (1 - k) * (1 - k), r0 = Math.max(0, R - wid / 2), r1 = R + wid / 2;
+      const g = ctx.createRadialGradient(q.x, q.y, r0, q.x, q.y, r1);
+      g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.32, `rgba(255,255,255,${.16 * a})`); g.addColorStop(.5, 'rgba(255,255,255,0)');
+      g.addColorStop(.7, `rgba(0,0,0,${.22 * a})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.save(); ctx.beginPath(); ctx.arc(q.x, q.y, r1, 0, TAU); ctx.arc(q.x, q.y, r0, 0, TAU, true); ctx.fillStyle = g; ctx.fill('evenodd'); ctx.restore();
+    }
+    return {
+      name: 'Noodle', blurb: 'A glowing gel puppet held below the screen’s edge. Rendered in Blender; acts out every state.',
+      own: true, modes: ['portrait'], ownsApproval: true, captions: true,
+      captionTop: () => state === 'needs',
+      clockLook: () => n.clip === 'waiting_rest' && frameNo() >= 20 && frameNo() <= 52,
+      hold: { done: 4.4, dizzy: 4.8 },
+      onState(s, prev) {
+        if (s === prev && prev !== null) return;
+        for (const k of [...of(s, 'rest'), ...of(s, 'beat'), ...of(s, 'enter'), ...of(s, 'react'), ...of(s, 'once')]) load(k);
+        if (n.tool && n.tool.phase !== 'fly') Object.assign(n.tool, { phase: 'fly', vx: 60, vy: -200, vr: 3, rot: 0 });
+        if (prev === 'approval' && s === 'done' && variant) return play('approval_allow', { then: ['done_in'] });
+        if (prev === 'approval' && s !== 'approval' && n.card?.phase === 'ride') Object.assign(n.card, { phase: 'drop', vx: -30, vy: 20, vr: -2.4 });
+        const enter = of(s, 'enter');
+        if (prev === 'compacting' && s !== 'compacting') return play('compact_out', { then: enter });
+        if (prev === 'sleep' && s !== 'sleep') {
+          const fr = CL.popup?.frames ?? [], from = Math.max(0, fr.findIndex(r => r[6] >= -2.75));
+          return play('popup', { from, then: enter });
+        }
+        if (s === 'idle' && ['react', 'once'].includes(meta(n.clip)?.role) && n.clip !== 'dizzy') { n.queue = []; return; }   // finish the reaction, then idle
+        if (s === 'working') { n.callT = 2.5; n.work = 'work_read'; }
+        if (s === 'dizzy') return play('dizzy');
+        if (enter.length) return play(enter[0]);
+        play(restFor(s));
+      },
+      transition() { if (n.clip !== 'popup') play('popup', { dissolve: false }); },
+      poke() { play('poke'); },
+      pet() { if (n.clip !== 'pet') play('pet'); },
+      react(kind) { play(kind === 'interrupt' ? 'interrupted' : 'oops'); },
+      deny() { play('approval_deny'); },
+      step(dt) {
+        if (n.fade && (n.fade.t += dt) > .15) n.fade = null;
+        n.flex = Math.max(0, n.flex - dt * 9);
+        // holding the card: the hold sequence follows your finger instead of time
+        const holding = state === 'approval' && hold > .02 && meta(n.clip)?.state === 'approval' && ['rest', 'beat'].includes(meta(n.clip)?.role);
+        if (holding !== n.held) { n.fade = { fr: current(), t: 0 }; n.held = holding; }
+        if (!n.held) {
+          const before = n.f; n.f += dt * FPS;
+          const m = meta(n.clip);
+          if (m) {
+            const c = m.n;
+            for (const [kind, at] of Object.entries(m.events ?? {})) for (const f of [].concat(at)) if (before < f && n.f >= f) event(n.clip, kind);
+            if (n.f >= c) {
+              if (n.clip === 'bump' && n.tool) n.work = KIND[n.tool.kind] ?? 'work_read';
+              if (n.clip === 'approval_deny') n.card = null;
+              if (n.clip === 'dizzy' && state === 'dizzy' && !n.queue.length) n.f = c - 1;      // it stays shaken off until the state moves on
+              else next();
+            }
+          }
+        }
+        // the work: tool calls land on its head every few seconds
+        if (state === 'working' && n.clip.startsWith('work_') && (n.callT -= dt) <= 0) { n.callT = 3.5 + Math.random() * 3; play('bump', { dissolve: true }); }
+        // effects
+        const a = anchors();
+        n.fog += ((a.press > .9 ? 1 : 0) - n.fog) * Math.min(1, dt * (a.press > .9 ? 3 : .7));
+        if (meta(n.clip)?.state === 'sleep' && ['rest', 'beat'].includes(meta(n.clip)?.role) && (n.zT -= dt) <= 0) { n.zT = 1.5; n.fx.push({ k: 'z', x: a.hx + 14, y: a.hy + 6, t: 0 }); }
+        for (const q of n.fx) { q.t += dt; if (q.vx !== undefined) { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 260 * dt; q.r += q.vr * dt; } }
+        n.fx = n.fx.filter(q => q.t < (q.k === 'z' ? 2.6 : q.k === 'confetti' ? 1.8 : q.k === 'glass' ? 1.1 : 1.0));
+        for (const c of [n.tool, n.card]) if (c && (c.phase === 'fly' || c.phase === 'drop')) {
+          c.x += c.vx * dt; c.y += c.vy * dt; c.vy += (c.phase === 'drop' ? 900 : 380) * dt; c.rot = (c.rot ?? 0) + c.vr * dt;
+        }
+        if (n.tool && (n.tool.y < 20 || n.tool.y > 300 || n.tool.x > 290)) n.tool = null;
+        if (n.card && (n.card.phase === 'fly' || n.card.phase === 'drop') && (n.card.y < -80 || n.card.y > 340)) n.card = null;
+        if (n.card && n.card.phase !== 'fly' && n.card.phase !== 'drop' && state !== 'approval' && !['approval_allow', 'approval_deny'].includes(n.clip)) n.card = null;
+      },
+      draw(ctx, p) {
+        if (p.thumb) { const s = still(state === 'approval' ? 'working' : state); if (s.complete && s.naturalWidth) ctx.drawImage(s, 0, 0, 198, 242); return; }
+        const blit = (fr, al) => { if (!fr.im.complete || !fr.im.naturalWidth) return; ctx.globalAlpha = al; ctx.drawImage(fr.im, fr.sx, fr.sy, fr.sw, fr.sh, 0, 0, 198, 242); ctx.globalAlpha = 1; };
+        ctx.save(); if (p.ao) ctx.filter = 'grayscale(1) brightness(.45)';
+        // the glass flexes a hair toward you on a knock
+        if (n.flex > 0) { const s = 1 + .012 * n.flex, a = anchors(); ctx.translate(a.fx, a.fy); ctx.scale(s, s); ctx.translate(-a.fx, -a.fy); }
+        if (n.fade) { blit(n.fade.fr, 1); blit(current(), clamp(n.fade.t / .15, 0, 1)); } else blit(current(), 1);
+        ctx.restore();
+      },
+      // what it shares the screen with, drawn over the frame
+      front(ctx) {
+        const a = anchors();
+        // the glass fogs where its face presses, and ripples like liquid glass where it knocks
+        if (n.fog > .02) {
+          const g = ctx.createRadialGradient(a.fx, a.fy + 8, 4, a.fx, a.fy + 8, 78);
+          g.addColorStop(0, `rgba(235,240,245,${.16 * n.fog})`); g.addColorStop(.55, `rgba(235,240,245,${.07 * n.fog})`); g.addColorStop(1, 'rgba(235,240,245,0)');
+          ctx.fillStyle = g; ctx.fillRect(0, 0, 198, 242);
+        }
+        for (const q of n.fx) if (q.k === 'glass') glass(ctx, q);
+        for (const q of n.fx) {
+          if (q.k === 'confetti') { ctx.save(); ctx.globalAlpha = clamp(1.8 - q.t, 0, 1); ctx.translate(q.x, q.y); ctx.rotate(q.r); ctx.fillStyle = q.c; ctx.fillRect(-3, -1.5, 6, 3); ctx.restore(); }
+          if (q.k === 'bonk') { const k = q.t; ctx.strokeStyle = `rgba(255,255,255,${1 - k})`; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+            for (let i = 0; i < 6; i++) { const th = -Math.PI / 2 + (i - 2.5) * .45, r0 = 8 + k * 10, r1 = 16 + k * 14; ctx.beginPath(); ctx.moveTo(q.x + Math.cos(th) * r0, q.y + Math.sin(th) * r0); ctx.lineTo(q.x + Math.cos(th) * r1, q.y + Math.sin(th) * r1); ctx.stroke(); } }
+          if (q.k === 'z') { ctx.globalAlpha = clamp(1 - q.t / 2.6, 0, 1); ctx.fillStyle = COL.gray; ctx.font = `600 ${10 + q.t * 4}px "Schibsted Grotesk", sans-serif`; ctx.textAlign = 'left'; ctx.fillText('z', q.x + q.t * 9, q.y - q.t * 16); ctx.globalAlpha = 1; }
+        }
+        // compacting: a press comes down onto its hair and holds it squashed; it lifts away when compaction ends
+        if (['compacting_in', 'compacting_rest', 'compact_out'].includes(n.clip)) {
+          const k = n.clip === 'compacting_in' ? clamp(n.f / count('compacting_in'), 0, 1) : n.clip === 'compact_out' ? 1 - clamp(n.f / 8, 0, 1) : 1;
+          const y = lerp(-14, a.hy + 2, outC(k));
+          ctx.fillStyle = '#2A2E33'; ctx.fillRect(95, 30, 8, Math.max(0, y - 40));
+          ctx.fillStyle = '#3A3F46'; roundRect(ctx, 12, y - 10, 174, 10, 3); ctx.fill();
+          ctx.fillStyle = '#5A6069'; ctx.fillRect(14, y - 10, 170, 2);
+        }
+        // a tool call drops on its head and gets bonked off
+        const t = n.tool;
+        if (t) {
+          ctx.font = '500 10.5px "IBM Plex Mono", monospace'; const w = ctx.measureText(t.text).width + 16, h = 20;
+          if (t.phase === 'fall') { const land = [].concat(CL.bump?.events?.land ?? 6)[0], k = clamp(n.f / land, 0, 1); t.x = a.hx; t.y = lerp(36, a.hy + 4, k * k); t.rot = 0; }
+          if (t.phase === 'ride') { t.x = a.hx; t.y = a.hy + 4; t.rot = a.roll * DEG * .5; }
+          card(ctx, t, w, h, () => { ctx.fillStyle = COL.card; roundRect(ctx, 0, 0, w, h, 7); ctx.fill(); ctx.strokeStyle = '#2C3035'; ctx.lineWidth = 1; ctx.stroke();
+            ctx.fillStyle = t.kind === 'run' ? COL.amber : COL.white; ctx.textAlign = 'left'; ctx.fillText(t.text, 8, 14); });
+        }
+        // the approval card rides on its hair; holding pushes it up; allow launches it, deny drops it
+        const c = n.card;
+        if (c) {
+          const w = 152, h = 60;
+          if (c.phase === 'fall') { const land = CL.approval_in?.events?.land ?? 8, k = clamp(n.f / land, 0, 1); c.x = clamp(a.hx, 82, 116); c.y = lerp(38, a.hy + 6, k * k); c.rot = 0; }
+          if (c.phase === 'ride') { c.x = clamp(a.hx, 82, 116); c.y = a.hy + 6; c.rot = a.roll * DEG * .6; }
+          card(ctx, c, w, h, () => {
+            ctx.fillStyle = COL.card; roundRect(ctx, 0, 0, w, h, 13); ctx.fill(); ctx.strokeStyle = '#2C3035'; ctx.lineWidth = 1; ctx.stroke();
+            ctx.textAlign = 'left'; ctx.fillStyle = COL.white; ctx.font = '500 14px "IBM Plex Mono", monospace'; ctx.fillText('rm -rf build', 12, 22);
+            ctx.fillStyle = hold > 0 ? COL.amber : COL.gray; ctx.font = '500 10.5px "IBM Plex Mono", monospace'; ctx.fillText(hold > 0 ? 'keep holding' : 'hold to allow', 12, 39);
+            ctx.fillStyle = '#26292D'; roundRect(ctx, 12, 47, w - 24, 3, 1.5); ctx.fill();
+            if (hold > 0) { ctx.fillStyle = COL.amber; roundRect(ctx, 12, 47, (w - 24) * hold, 3, 1.5); ctx.fill(); }
+          });
+          if (state === 'approval') {
+            ctx.fillStyle = '#1A1C1F'; ctx.beginPath(); ctx.arc(36, 210, 13, 0, TAU); ctx.fill();
+            ctx.strokeStyle = COL.gray; ctx.lineWidth = 1.8; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(31.5, 205.5); ctx.lineTo(40.5, 214.5); ctx.moveTo(40.5, 205.5); ctx.lineTo(31.5, 214.5); ctx.stroke();
+          }
+        }
+      },
+      hit: pt => { const a = anchors(); return Math.hypot((pt.x - a.fx) / 56, (pt.y - (a.fy - 24)) / 64) < 1; },
+      extents: { hx: 50, top: 60, bottom: 60 },
+      preload() { for (const k of [...of('idle', 'rest'), ...of('idle', 'beat'), 'popup', 'poke', 'pet']) load(k); },
+      debug: () => ({ clip: n.clip, frame: frameNo(), held: n.held, loaded: Object.values(pages).filter(im => im.complete && im.naturalWidth).length }),
+    };
+  })();

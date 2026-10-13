@@ -1,0 +1,16 @@
+name: Feature or character idea
+description: Something Chums should do, or a new character.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you want to do
+      description: What you want to do from the watch or the iPhone, or what the character should be, and why.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How it could work
+      description: Optional. For a character, say how it shows each state (design/STATES.md lists them).

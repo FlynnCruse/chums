@@ -1,0 +1,52 @@
+#!/bin/zsh
+# Run the Chums watch app in the watchOS Simulator (no signing needed). Talks to the hub on this Mac.
+set -e
+ROOT="${0:A:h:h}"
+source "$ROOT/tools/common.zsh"
+chums_help "$@"
+: ${DEVELOPER_DIR:=/Applications/Xcode.app/Contents/Developer}; export DEVELOPER_DIR
+[[ -d $DEVELOPER_DIR ]] || chums_die "Xcode not found at $DEVELOPER_DIR. Install Xcode 26 or later, or set DEVELOPER_DIR."
+chums_need xcodegen "Install it with: brew install xcodegen"
+chums_need_config
+NAME="Chums Watch"
+
+"$ROOT/tools/gen-config.sh" >/dev/null
+cd "$ROOT/app"
+: ${CHUMS_BUNDLE:=$(chums_cfg bundleId)}
+: ${CHUMS_BUNDLE:=dev.chums}
+export CHUMS_BUNDLE
+xcodegen generate --quiet
+LOG=$(mktemp)
+xcodebuild -project Chums.xcodeproj -target ChumsWatch -sdk watchsimulator -configuration Debug \
+  CODE_SIGNING_ALLOWED=NO SYMROOT="$PWD/build/sym" build > "$LOG" 2>&1 || true
+grep -E "error:|BUILD" "$LOG" | awk '!seen[$0]++' | head -20
+grep -q "BUILD SUCCEEDED" "$LOG" || chums_die "the build failed. Full log: $LOG (known errors: docs/troubleshooting.md)"
+rm -f "$LOG"
+
+UDID=$(xcrun simctl list devices -j | python3 -c '
+import json, sys
+for rt, devs in json.load(sys.stdin)["devices"].items():
+    for d in devs:
+        if d["name"] == sys.argv[1] and d["isAvailable"]: print(d["udid"]); raise SystemExit' "$NAME")
+if [[ -z "$UDID" ]]; then
+  RUNTIME=$(xcrun simctl list runtimes -j | python3 -c '
+import json, sys
+rts = [r for r in json.load(sys.stdin)["runtimes"] if r["platform"] == "watchOS" and r["isAvailable"]]
+print(rts[-1]["identifier"] if rts else "")')
+  [[ -z "$RUNTIME" ]] && { echo "No watchOS simulator runtime. Run: xcodebuild -downloadPlatform watchOS"; exit 1; }
+  TYPE=$(xcrun simctl list devicetypes -j | python3 -c '
+import json, sys
+t = [d for d in json.load(sys.stdin)["devicetypes"] if "Watch" in d["name"]]
+pick = next((d for d in t if "Series 7 (45mm)" in d["name"]), None) or next((d for d in t if "45mm" in d["name"] or "46mm" in d["name"]), t[-1] if t else None)
+print(pick["identifier"] if pick else "")')
+  [[ -z "$TYPE" ]] && chums_die "Xcode lists no Apple Watch simulator. Run: xcodebuild -downloadPlatform watchOS"
+  UDID=$(xcrun simctl create "$NAME" "$TYPE" "$RUNTIME")
+fi
+
+xcrun simctl boot "$UDID" 2>/dev/null || true
+open -a Simulator --args -CurrentDeviceUDID "$UDID"
+xcrun simctl bootstatus "$UDID" -b >/dev/null
+xcrun simctl install "$UDID" build/sym/Debug-watchsimulator/ChumsWatch.app
+xcrun simctl privacy "$UDID" grant microphone "$CHUMS_BUNDLE.watchkitapp" 2>/dev/null || true
+xcrun simctl launch "$UDID" "$CHUMS_BUNDLE.watchkitapp"
+echo "$UDID"

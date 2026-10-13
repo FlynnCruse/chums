@@ -1,0 +1,151 @@
+#!/bin/zsh
+# Build Chums (signed) and install it straight onto the Apple Watch, then launch it; the iPhone app too, when Xcode
+# knows the iPhone. Run it again to update the app,
+# after the hub's token or public address changed, and within 7 days when you sign with a free Personal Team.
+# Needs: the watch known to Xcode (xcrun devicectl list devices), Developer Mode on the watch, an Apple ID in Xcode.
+# Settings (environment or ~/.chums/config.json): CHUMS_TEAM / "team", CHUMS_BUNDLE / "bundleId". See tools/common.zsh.
+# What each error means and how to fix it: docs/troubleshooting.md.
+set -e
+ROOT="${0:A:h:h}"
+source "$ROOT/tools/common.zsh"
+chums_help "$@"
+: ${DEVELOPER_DIR:=/Applications/Xcode.app/Contents/Developer}; export DEVELOPER_DIR
+[[ -d $DEVELOPER_DIR ]] || chums_die "Xcode not found at $DEVELOPER_DIR. Install Xcode 26 or later, or set DEVELOPER_DIR."
+chums_need xcodegen "Install it with: brew install xcodegen"
+chums_need_config
+
+# The watch first: the build takes minutes, and without a watch there is nothing to install it on.
+JSON=$(mktemp)
+xcrun devicectl list devices --json-output "$JSON" >/dev/null 2>&1 || true
+IFS=$'\t' read -r WATCH WNAME WDEV < <(python3 -c '
+import json, sys
+try: devices = json.load(open(sys.argv[1]))["result"]["devices"]
+except Exception: devices = []
+for d in devices:
+    if d.get("hardwareProperties", {}).get("platform") == "watchOS":
+        p = d.get("deviceProperties", {})
+        print(d["identifier"], p.get("name", "Apple Watch"), p.get("developerModeStatus", ""), sep="\t"); break' "$JSON") || true
+# The iPhone app (the agents, their conversations, the widgets and the Talk control) goes on the iPhone, if Xcode has it.
+IFS=$'\t' read -r PHONE PNAME PDEV < <(python3 -c '
+import json, sys
+try: devices = json.load(open(sys.argv[1]))["result"]["devices"]
+except Exception: devices = []
+for d in devices:
+    p, c = d.get("deviceProperties", {}), d.get("connectionProperties", {})
+    if d.get("hardwareProperties", {}).get("platform") == "iOS" and c.get("pairingState") == "paired" and c.get("tunnelState") != "unavailable":
+        print(d["identifier"], p.get("name", "iPhone"), p.get("developerModeStatus", ""), sep="\t"); break' "$JSON") || true
+rm -f "$JSON"
+if [[ -z "$WATCH" ]]; then
+  echo "Xcode doesn't know any Apple Watch yet. The first time:"
+  echo "  1. Connect the paired iPhone to this Mac with a USB cable, unlock it and tap Trust."
+  echo "  2. Keep the watch unlocked, near the iPhone, on the same Wi-Fi as the Mac."
+  echo "  3. Open Xcode › Window › Devices and Simulators and wait until the watch is listed."
+  echo "Then run this again. Details: docs/setup.md, \"Connect the iPhone and the watch to Xcode\"."
+  exit 1
+fi
+# "unknown": Xcode can't reach the watch right now to ask (asleep, or the iPhone off USB); the install says if it fails
+[[ $WDEV == unknown ]] && echo "Xcode can't read $WNAME's Developer Mode right now: trying anyway (keep the watch unlocked and awake)."
+if [[ -n "$WDEV" && "$WDEV" != enabled && "$WDEV" != unknown ]]; then
+  echo "$WNAME has Developer Mode $WDEV. On the watch: Settings › Privacy & Security › Developer Mode, turn it on,"
+  echo "restart the watch when it asks, then unlock it and confirm Turn On. Then run this again."
+  echo "No switch there? docs/setup.md, \"Turn on Developer Mode\"."
+  exit 1
+fi
+echo "Watch: $WNAME"
+
+"$ROOT/tools/gen-config.sh"
+cd "$ROOT/app"
+
+# Sign with a paid team if Xcode has one, else your free Personal Team (installs expire after 7 days).
+: ${CHUMS_TEAM:=$(chums_cfg team)}; export CHUMS_TEAM
+KINDF=$(mktemp)                                   # pick-team.py says "free" on stderr for a free Personal Team
+TEAM=$(python3 "$ROOT/tools/pick-team.py" 2>"$KINDF") || TEAM=""
+KIND=$(cat "$KINDF" 2>/dev/null); rm -f "$KINDF"
+if [[ -z "$TEAM" ]]; then
+  echo "No developer team can sign: Xcode lists no team for any Apple ID."
+  echo "Add an Apple ID in Xcode › Settings › Apple Accounts › + › Apple ID. Any Apple ID has a free Personal Team that"
+  echo "can install Chums on your own devices (installs last 7 days)."
+  echo "(A paid team also lists nothing while Apple converts a membership, e.g. from individual to organization.)"
+  echo "Then run this again. (Or: CHUMS_TEAM=<team ID> bin/chums-install)"
+  exit 1
+fi
+# a bundle ID belongs to the team that registered it first, so the default one carries the team's ID; set CHUMS_BUNDLE
+# (or "bundleId" in ~/.chums/config.json) to keep one you already registered
+: ${CHUMS_BUNDLE:=$(chums_cfg bundleId)}
+: ${CHUMS_BUNDLE:=dev.chums.${TEAM:l}}
+export CHUMS_BUNDLE CHUMS_TEAM=$TEAM
+xcodegen generate --quiet
+echo "Signing with team $TEAM as $CHUMS_BUNDLE"
+[[ "$KIND" == free ]] && echo "(a free Personal Team: this install expires on $(date -v+7d '+%Y-%m-%d'); run bin/chums-install again before then)"
+# -target (not -scheme): scheme builds demand the multi-GB watchOS platform download; target builds don't.
+# Release: the characters do real per-frame maths (the tube is lit and sliced live); Debug Swift is ~15× slower.
+echo "Building (a few minutes the first time)…"
+LOG=$(mktemp)
+xcodebuild -project Chums.xcodeproj -target Chums -configuration Release DEVELOPMENT_TEAM="$TEAM" \
+  -allowProvisioningUpdates -allowProvisioningDeviceRegistration SYMROOT="$PWD/build/sym" build > "$LOG" 2>&1 || true
+grep -E "error:|BUILD" "$LOG" | sort -u | head -8
+if ! grep -q "BUILD SUCCEEDED" "$LOG"; then
+  if grep -q "No Account for Team" "$LOG"; then
+    echo "Xcode isn't signed in to the Apple ID for team $TEAM. Xcode › Settings › Apple Accounts › + › Apple ID, sign in, then run this again."
+    echo "Any Apple ID works: a free one gets a Personal Team that can install on your own devices."
+  elif grep -qi "has no devices" "$LOG"; then
+    echo "Team $TEAM has no registered devices yet. Xcode registers a device the first time you run an app on it:"
+    echo "  1. open $ROOT/app/Chums.xcodeproj"
+    echo "  2. choose the Chums scheme and your iPhone as the destination, press Run (⌘R)"
+    echo "  3. choose the ChumsWatch scheme and your watch as the destination, press Run"
+    echo "Then run bin/chums-install again. Details: docs/troubleshooting.md, \"Your team has no devices\"."
+  elif grep -qi "cannot be registered to your development team" "$LOG"; then
+    echo "The bundle ID $CHUMS_BUNDLE belongs to another team. Pick one of your own: \"bundleId\": \"com.<you>.chums\" in"
+    echo "~/.chums/config.json (or CHUMS_BUNDLE=…), then run this again."
+  elif grep -qi "App ID limit" "$LOG"; then
+    echo "A free Personal Team can register 10 App IDs in 7 days, and each new bundle ID uses 4 (the iPhone app, its"
+    echo "widgets, the watch app, the watch's widget)."
+    echo "Wait for the oldest to expire, and keep one bundle ID from then on (\"bundleId\" in ~/.chums/config.json)."
+  elif grep -qi "license" "$LOG" && grep -qi "agree" "$LOG"; then
+    echo "Xcode's license hasn't been accepted: open Xcode once, or run sudo xcodebuild -license accept. Then run this again."
+  fi
+  echo "Build failed; full log: $LOG"
+  echo "Known errors and their fixes: docs/troubleshooting.md"
+  exit 1
+fi
+
+ILOG=$(mktemp)
+# The wireless connection to the watch often drops the first attempt or two; retry.
+for i in 1 2 3 4 5; do
+  xcrun devicectl device install app --device "$WATCH" build/sym/Release-watchos/ChumsWatch.app > "$ILOG" 2>&1 && break
+  why=$(grep -m1 -o 'ERROR: [^(]*' "$ILOG" || tail -1 "$ILOG")
+  if grep -q "IXErrorDomain error 48" "$ILOG"; then tip="the iPhone is installing Chums on the watch itself: unlock the watch and wait for it"
+  elif grep -qi "locked" "$ILOG"; then tip="unlock the watch"
+  elif grep -qi "disk image" "$ILOG"; then tip="unlock the watch and let Xcode finish preparing it (Window › Devices and Simulators)"
+  else tip="keep the watch unlocked, awake and near the iPhone"; fi
+  echo "install attempt $i failed ($why); $tip"
+  if [[ $i == 5 ]]; then echo "Full log: $ILOG. Known errors and their fixes: docs/troubleshooting.md"; WATCH_FAILED=1; break; fi
+  sleep 6
+done
+if [[ -n "$WATCH_FAILED" ]]; then
+  :
+elif xcrun devicectl device process launch --device "$WATCH" "$CHUMS_BUNDLE.watchkitapp" > "$ILOG" 2>&1; then
+  echo "Chums is running on the watch."
+else
+  echo "Chums is installed, but it didn't open ($(grep -m1 -o 'ERROR: [^(]*' "$ILOG" || tail -1 "$ILOG"))."
+  grep -qi "locked" "$ILOG" && echo "The watch was locked: unlock it and open Chums from its app list."
+fi
+# Then the iPhone app. (It carries the watch app too: installed after the watch has it, the iPhone has nothing to send.)
+if [[ -z "$PHONE" ]]; then
+  echo "No iPhone known to Xcode: skipping the iPhone app (connect the iPhone by USB once, then run this again)."
+elif [[ -n "$PDEV" && "$PDEV" != enabled && "$PDEV" != unknown ]]; then
+  echo "$PNAME has Developer Mode $PDEV: skipping the iPhone app. On the iPhone: Settings › Privacy & Security ›"
+  echo "Developer Mode, turn it on, restart, confirm Turn On. Then run this again."
+else
+  for i in 1 2 3; do
+    if xcrun devicectl device install app --device "$PHONE" build/sym/Release-iphoneos/Chums.app > "$ILOG" 2>&1; then
+      echo "Chums is installed on $PNAME."; break
+    fi
+    echo "iPhone install attempt $i failed ($(grep -m1 -o 'ERROR: [^(]*' "$ILOG" || tail -1 "$ILOG")); unlock the iPhone"
+    [[ $i == 3 ]] && echo "Skipping the iPhone app. Full log: $ILOG"
+    sleep 4
+  done
+fi
+
+[[ -n "$WATCH_FAILED" ]] && exit 1
+echo "Next: start the agents (bin/chums-agents install; docs/setup.md, step 10), and check the whole chain with bin/chums-doctor."

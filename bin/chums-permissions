@@ -1,0 +1,42 @@
+#!/bin/zsh
+# The permissions the agents need on this Mac, granted once. The hub, the agents and tailscaled run through one app,
+# Chums (~/Applications/Chums.app, tools/mac-app), so everything they ask for belongs to it, and Claude Code, Codex or
+# Node.js updates don't undo it. Opening Chums shows a window: Allow All, then answer each macOS dialog.
+#   bin/chums-permissions          open Chums (the same as double-clicking it in ~/Applications); builds it if needed
+#   bin/chums-permissions check    what's granted, asking nothing and changing nothing
+ROOT="${0:A:h:h}"
+source "$ROOT/tools/common.zsh"
+chums_help "$@"
+[[ -z "$1" || "$1" == check ]] || chums_die "unknown command $1 (bin/chums-permissions --help)"
+APP=${CHUMS_MAC_APP:-$HOME/Applications/Chums.app}
+APPX=$APP/Contents/MacOS/Chums
+LA=~/Library/LaunchAgents
+
+if [[ $1 != check ]]; then
+  "$ROOT/tools/mac-app/build.zsh" >/dev/null || chums_die "couldn't build $APP (tools/mac-app/build.zsh)"
+  open "$APP" && print "Chums is open: click Allow All, then answer each macOS dialog."
+  exit 0
+fi
+
+[[ -x $APPX ]] || { print "no $APP yet: bin/chums-setup --launchd, bin/chums-agents install and bin/chums-permissions build it"; exit 1 }
+print "Chums: $APP"
+[[ $(cat "$APP/Contents/Resources/stamp" 2>/dev/null) == $("$ROOT/tools/mac-app/build.zsh" --expected-stamp) ]] \
+  || print "  note  Chums.app is out of date: bin/chums-agents install rebuilds it (then Allow All again if it's signed ad hoc)"
+n=0
+[[ -f $LA/$CHUMS_LABEL_PREFIX.hub.plist ]] || { print "  the hub doesn't run as a LaunchAgent: what it does on the Mac asks as the terminal it runs in, not as Chums"; n=1 }
+for f in $LA/$CHUMS_LABEL_PREFIX.hub.plist $LA/$CHUMS_LABEL_PREFIX.tailscaled.plist $LA/$CHUMS_LABEL_PREFIX.agent.*.plist(N); do
+  [[ -f $f && $(plutil -extract ProgramArguments.0 raw "$f" 2>/dev/null) != $APPX ]] && { print "  ${f:t} doesn't start through Chums"; n=1 }
+done
+(( n )) && print "  fix   bin/chums-setup --launchd and bin/chums-agents install" || print "  ok    the hub, tailscaled and the agents run as Chums"
+show() { local label=$1; shift; printf "  %-5s %s\n" $("$APPX" --check "$@" >/dev/null 2>&1 && print ok || print no) "$label" }
+show "Accessibility" accessibility
+show "Screen Recording" screen
+show "Full Disk Access (optional; covers your folders)" fda
+"$APPX" --check apps 2>/dev/null | while IFS=$'\t' read -r st name; do
+  case $st in
+    granted) printf "  %-5s control %s\n" ok "$name" ;;
+    not-open) printf "  %-5s control %s (not open: can't be checked)\n" "?" "$name" ;;
+    *) printf "  %-5s control %s (%s)\n" no "$name" "$st" ;;
+  esac
+done
+print "  (your folders: Chums's window shows them; checking them here would ask)"

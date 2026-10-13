@@ -1,0 +1,93 @@
+#!/bin/zsh
+# The agents (~/.chums/agents.json). Claude Code ones are each a session run in the background by a LaunchAgent;
+# Codex, Copilot and ACP ones ("runtime" in agents.json) are run by the hub itself (hub/runtimes.mjs).
+#   chums-agents install        write and start a LaunchAgent per Claude Code agent (again after editing agents.json),
+#                               and remove those of agents that run on something else now
+#   chums-agents add|remove <id>   one agent's LaunchAgent (the hub uses these when you switch its runtime on the watch)
+#   chums-agents status         which are running
+#   chums-agents stop|start|restart <id>
+#   chums-agents open <id>      take an agent into this terminal (Claude Code: its LaunchAgent stops and it goes back
+#                               when you quit; Codex: a Codex terminal on the same thread, the watch stays on it too)
+# LaunchAgent labels are $CHUMS_LABEL_PREFIX.agent.<id> (default dev.chums; see tools/common.zsh).
+ROOT="${0:A:h:h}"; LA=~/Library/LaunchAgents; D=gui/$(id -u)
+source "$ROOT/tools/common.zsh"
+chums_help "$@"
+[[ -z "$1" ]] && chums_help --help
+[[ -x "$CHUMS_NODE" ]] || chums_die "node not found. Install Node.js 20.11 or later (brew install node), or set CHUMS_NODE."
+[[ -f ~/.chums/agents.json ]] || chums_die "no ~/.chums/agents.json yet. Start the hub once (bin/chums-hub); it writes the defaults."
+# ids [claude|hub]: the agents run as Claude Code sessions, or by the hub
+ids() { "$CHUMS_NODE" -e 'const w=process.argv[1];console.log(JSON.parse(require("fs").readFileSync(process.env.HOME+"/.chums/agents.json","utf8")).filter(a=>((a.runtime??"claude")==="claude")===(w!=="hub")).map(a=>a.id).join(" "))' "$1" }
+runtime() { "$CHUMS_NODE" -e 'const a=JSON.parse(require("fs").readFileSync(process.env.HOME+"/.chums/agents.json","utf8")).find(a=>a.id===process.argv[1]);console.log(a?(a.runtime??"claude"):"")' "$1" }
+label() { echo "$CHUMS_LABEL_PREFIX.agent.$1" }
+plist() {
+  cat > "$LA/$(label $1).plist" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$(label $1)</string>
+  <key>ProgramArguments</key><array><string>$APPX</string><string>/usr/bin/expect</string><string>$ROOT/tools/agent-host.exp</string><string>$1</string></array>
+  <key>EnvironmentVariables</key><dict><key>CHUMS_NODE</key><string>$CHUMS_NODE</string>${CHUMS_NO_RC:+<key>CHUMS_NO_RC</key><string>1</string>}</dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>$HOME/.chums/agents/$1.launchd.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.chums/agents/$1.launchd.log</string>
+</dict></plist>
+PL
+}
+# a hub-run agent is started and stopped with the hub
+hubrun() { local r=$(runtime $1); [[ -n "$r" && "$r" != claude ]] && { echo "$1 runs on $r inside the hub: restart the hub to restart it (its log: ~/.chums/agents/$1.host.log)"; return 0 }; return 1 }
+case "$1" in
+  add|remove|stop|start|restart|open)
+    [[ -n "$2" ]] || { all=(${=$(ids claude)} ${=$(ids hub)}); chums_die "which agent? bin/chums-agents $1 <id> (in ~/.chums/agents.json: $all)" } ;;
+esac
+case "$1" in
+  install)
+    mkdir -p ~/.chums/agents "$LA"
+    # run through Chums.app, so every permission the agent needs belongs to "Chums" (bin/chums-permissions grants them)
+    APPX=$(CHUMS_NO_RESTART=1 "$ROOT/tools/mac-app/build.zsh") || chums_die "couldn't build ~/Applications/Chums.app"
+    failed=()
+    for a in $(ids claude); do
+      plist $a || { failed+=($a); continue }
+      chums_reload $(label $a) "$LA/$(label $a).plist" && echo "started $a" || failed+=($a)
+    done
+    for a in $(ids hub); do echo "$a: run by the hub ($(runtime $a)); restart the hub after editing agents.json"; done
+    # a LaunchAgent whose agent runs on something else now (or is gone) is removed
+    keep=" $(ids claude) "
+    for f in $LA/$CHUMS_LABEL_PREFIX.agent.*.plist(N); do
+      a=${${f:t}%.plist}; a=${a#$CHUMS_LABEL_PREFIX.agent.}
+      [[ $keep == *" $a "* ]] && continue
+      launchctl bootout $D/$(label $a) 2>/dev/null; rm -f "$f"; echo "removed $a's LaunchAgent (it isn't a Claude Code agent now)"
+    done
+    (( ${#failed} )) && chums_die "didn't start: $failed (their logs: ~/.chums/agents/<id>.launchd.log)"
+    true ;;
+  add)
+    [[ $(runtime $2) == claude ]] || chums_die "$2 isn't a Claude Code agent in ~/.chums/agents.json"
+    mkdir -p ~/.chums/agents "$LA"
+    APPX=$(CHUMS_NO_RESTART=1 "$ROOT/tools/mac-app/build.zsh") || chums_die "couldn't build ~/Applications/Chums.app"
+    plist $2 && chums_reload $(label $2) "$LA/$(label $2).plist" && echo "started $2" || chums_die "couldn't start $2" ;;
+  remove)
+    launchctl bootout $D/$(label $2) 2>/dev/null; rm -f "$LA/$(label $2).plist"; echo "removed $2's LaunchAgent" ;;
+  status)
+    for a in $(ids claude); do
+      pid=$(launchctl print $D/$(label $a) 2>/dev/null | awk '/^\tpid = /{print $3}')
+      if [[ -n "$pid" ]]; then state="running (pid $pid)"; else state="not running"; fi
+      echo "$a: $state  $(tail -1 ~/.chums/agents/$a.host.log 2>/dev/null)"
+    done
+    for a in $(ids hub); do echo "$a: $(runtime $a), run by the hub  $(tail -1 ~/.chums/agents/$a.host.log 2>/dev/null)"; done ;;
+  stop) hubrun $2 || { launchctl bootout $D/$(label $2) && echo "stopped $2" } ;;
+  start) hubrun $2 || { launchctl bootstrap $D "$LA/$(label $2).plist" && echo "started $2" } ;;
+  restart) hubrun $2 || { launchctl kickstart -k $D/$(label $2) && echo "restarted $2" } ;;
+  open)
+    case "$(runtime $2)" in
+      claude)
+        launchctl bootout $D/$(label $2) 2>/dev/null; sleep 2
+        args=("${(@f)$("$CHUMS_NODE" $ROOT/tools/agent-cmd.mjs $2)}") || exit 1
+        cd "$args[1]"; "${(@)args[2,-1]}"
+        launchctl bootstrap $D "$LA/$(label $2).plist" && echo "$2 is back in the background" ;;
+      codex) exec "$ROOT/bin/chums-codex" $2 ;;          # a Codex terminal on the hub's app-server, on the agent's thread
+      "") echo "no agent $2 in ~/.chums/agents.json"; exit 1 ;;
+      *) echo "$2 runs on $(runtime $2) inside the hub, with no terminal to open: its conversation is in the agent's own history (Copilot: copilot --resume, while the hub isn't running it)"; exit 1 ;;
+    esac ;;
+  *) chums_die "unknown command $1 (bin/chums-agents --help)" ;;
+esac

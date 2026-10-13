@@ -1,0 +1,145 @@
+#!/bin/zsh
+# Checks that this Mac has what Chums needs, installs the Node dependencies and the speech-to-text model, and says
+# what is missing and how to get it. Safe to run again.
+#   bin/chums-setup              check everything; install npm packages, the Whisper model and the agents' voices
+#                                (Kokoro) if missing
+#   bin/chums-setup --launchd    also run the hub (and tailscaled) in the background as LaunchAgents, started at login
+# Settings: see tools/common.zsh (CHUMS_LABEL_PREFIX, CHUMS_NODE, CHUMS_BUNDLE, CHUMS_TEAM). Whisper model folder:
+# CHUMS_WHISPER_MODEL (the hub reads the same variable).
+ROOT="${0:A:h:h}"
+source "$ROOT/tools/common.zsh"
+chums_help "$@"
+LAUNCHD=0; [[ "$1" == --launchd ]] && LAUNCHD=1
+[[ -z "$1" || "$1" == --launchd ]] || chums_die "unknown option $1 (bin/chums-setup --help)"
+MODEL=${CHUMS_WHISPER_MODEL:-~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/openai_whisper-base}
+missing=0
+ok()   { print -- "  ok    $*" }
+warn() { print -- "  --    $*" }
+bad()  { print -- "  MISSING  $*"; missing=$((missing + 1)) }
+
+print "Chums setup ($ROOT)"
+print "\nThe Mac side (hub, channel, hooks):"
+[[ $(uname) == Darwin ]] && ok "macOS $(sw_vers -productVersion)" || bad "macOS: the hub uses macOS tools (screencapture, sips, WebKit)"
+
+if [[ -x "$CHUMS_NODE" ]]; then
+  v=$("$CHUMS_NODE" -p 'process.versions.node')
+  if "$CHUMS_NODE" -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>20||(a==20&&b>=11)?0:1)'; then ok "node $v"
+  else bad "node $v is too old: Chums needs Node.js 20.11 or later (brew install node)"; fi
+else bad "node: install Node.js 20.11 or later (brew install node)"; fi
+
+if [[ -d "$ROOT/node_modules/@modelcontextprotocol/sdk" ]]; then ok "npm packages"
+elif command -v npm >/dev/null; then print "  ...   installing npm packages"; (cd "$ROOT" && npm ci --no-audit --no-fund >/dev/null) && ok "npm packages" || bad "npm packages: run npm ci in $ROOT"
+else bad "npm packages: npm not found (it comes with Node.js)"; fi
+
+# the coding agents: Claude Code, Codex, or both (docs/setup.md, "Pick your agent"); bin/chums-doctor checks sign-in
+have_agent=0
+if command -v claude >/dev/null 2>&1; then ok "claude $(command claude --version 2>/dev/null | head -1)"; have_agent=1
+elif [[ -x ~/.local/bin/claude ]]; then
+  warn "claude is in ~/.local/bin, which isn't on PATH: add it in ~/.zshrc (bin/chums-claude runs claude from PATH)"; have_agent=1
+else warn "claude: not installed (Claude Code agents need it): curl -fsSL https://claude.ai/install.sh | bash"; fi
+CODEX=$(command -v codex || { [[ -x ~/.npm-global/bin/codex ]] && echo ~/.npm-global/bin/codex })
+if [[ -n "$CODEX" ]]; then ok "codex ${$("$CODEX" --version 2>/dev/null | head -1)#codex-cli }"; have_agent=1
+else warn "codex: not installed (Codex agents need it): npm install -g @openai/codex"; fi
+(( have_agent )) || bad "a coding agent: install Claude Code or Codex (or both), then sign in to it"
+
+command -v python3 >/dev/null && ok "python3" || bad "python3: install the Xcode command line tools (xcode-select --install)"
+[[ -x /usr/bin/expect ]] && ok "expect (runs the background agents)" || warn "expect: only bin/chums-agents needs it"
+
+if command -v whisperkit-cli >/dev/null; then
+  ok "whisperkit-cli"
+  if [[ -f "$MODEL/config.json" || -d "$MODEL/AudioEncoder.mlmodelc" ]]; then ok "Whisper model ($MODEL)"
+  else
+    print "  ...   downloading the Whisper base model (about 150 MB) to ${MODEL:h}"
+    T=$(mktemp -d); say -o "$T/hello.wav" --data-format=LEI16@16000 "hello" 2>/dev/null
+    whisperkit-cli transcribe --model base --download-model-path "${MODEL:h:h:h:h}" --audio-path "$T/hello.wav" >/dev/null 2>&1
+    rm -rf "$T"
+    [[ -d "$MODEL" ]] && ok "Whisper model ($MODEL)" || bad "Whisper model: not at $MODEL. Download openai_whisper-base from huggingface.co/argmaxinc/whisperkit-coreml there, or set CHUMS_WHISPER_MODEL"
+  fi
+else bad "whisperkit-cli (speech to text on the Mac): brew install whisperkit-cli"; fi
+command -v ffmpeg >/dev/null && ok "ffmpeg" || bad "ffmpeg (converts each clip for Whisper): brew install ffmpeg"
+
+# the agents' voices: Kokoro on the GPU through MLX (Apple Silicon), in its own Python (tools/kokoro-server.py)
+KPY=~/.chums/kokoro/.venv/bin/python
+if [[ $(uname -m) != arm64 ]]; then warn "agents' voices: Kokoro needs Apple Silicon; the watch reads replies with its own voice"
+elif [[ -x $KPY ]] && "$KPY" -c 'import mlx_audio, misaki' 2>/dev/null; then
+  [[ -f ~/.chums/kokoro/.voices-english ]] || { (cd ~/.chums/kokoro && "$KPY" "$ROOT/tools/kokoro-server.py" --once --voices english >/dev/null 2>&1) && touch ~/.chums/kokoro/.voices-english; }
+  ok "agents' voices (Kokoro, ~/.chums/kokoro)"
+elif command -v uv >/dev/null; then
+  print "  ...   installing the agents' voices (Kokoro: its Python in ~/.chums/kokoro, about 1.1 GB; its model, about 0.35 GB)"
+  mkdir -p ~/.chums/kokoro
+  if uv venv -q --python 3.12 ~/.chums/kokoro/.venv && uv pip install -q --python "$KPY" -r "$ROOT/tools/kokoro-requirements.txt" \
+     && (cd ~/.chums/kokoro && "$KPY" "$ROOT/tools/kokoro-server.py" --once --voices english >/dev/null 2>&1)
+  then touch ~/.chums/kokoro/.voices-english; ok "agents' voices (Kokoro, ~/.chums/kokoro)"
+  else warn "agents' voices: Kokoro didn't install (the watch reads replies with its own voice). Run bin/chums-setup again"; fi
+else warn "agents' voices: install uv (brew install uv) and run bin/chums-setup again; until then the watch reads replies with its own voice"; fi
+
+if command -v tailscale >/dev/null && command -v tailscaled >/dev/null; then ok "tailscale + tailscaled"
+else bad "tailscale (the watch reaches the hub through Tailscale Funnel): brew install tailscale"; fi
+
+print "\nThe watch app (only to build it):"
+DEV=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
+if [[ -d $DEV ]]; then
+  xv=$(DEVELOPER_DIR=$DEV xcodebuild -version 2>/dev/null | head -1)
+  [[ ${${xv#Xcode }%%.*} -ge 26 ]] 2>/dev/null && ok "$xv" || bad "Xcode 26 or later (found: ${xv:-none}); the app targets watchOS 26"
+else bad "Xcode 26 or later from the App Store (or set DEVELOPER_DIR)"; fi
+command -v xcodegen >/dev/null && ok "xcodegen" || bad "xcodegen: brew install xcodegen"
+
+print "\nThis machine's settings:"
+[[ -f $CHUMS_CONFIG ]] && ok "$CHUMS_CONFIG (hub token, ports$(chums_cfg publicURL | grep -q . && echo ', public URL'))" \
+  || warn "$CHUMS_CONFIG: not yet; the hub writes it on its first start (bin/chums-hub)"
+[[ -n $(chums_cfg publicURL) ]] && ok "public URL $(chums_cfg publicURL)" || warn "no public URL yet: run bin/chums-tunnel (the watch needs it; the Simulator doesn't)"
+
+if (( LAUNCHD )); then
+  print "\nLaunchAgents ($CHUMS_LABEL_PREFIX.*):"
+  [[ -x "$CHUMS_NODE" ]] || chums_die "node not found; can't write the hub's LaunchAgent"
+  LA=~/Library/LaunchAgents; D=gui/$(id -u); mkdir -p $LA ~/.chums/tailscale
+  hub=$LA/$CHUMS_LABEL_PREFIX.hub.plist
+  # a hub started in a terminal holds the ports: the LaunchAgent's would fail and be restarted over and over
+  port=$(chums_cfg port); port=${port:-7717}
+  held=$(lsof -nP -t -iTCP:$port -sTCP:LISTEN 2>/dev/null | head -1)
+  if [[ -n $held ]] && ! launchctl print $D/$CHUMS_LABEL_PREFIX.hub 2>/dev/null | grep -q "state = running"; then
+    chums_die "a hub is already running (pid $held, port $port), most likely bin/chums-hub in a terminal: stop it there (Ctrl-C), then run bin/chums-setup --launchd again"
+  fi
+  # the hub and tailscaled run through Chums.app, so every permission they and the agents need belongs to "Chums".
+  # The hub is Interactive: without it launchd throttles it (and Whisper and Kokoro, its children) as background work,
+  # and speech in and out is slower after a quiet while.
+  APPX=$(CHUMS_NO_RESTART=1 "$ROOT/tools/mac-app/build.zsh") || chums_die "couldn't build ~/Applications/Chums.app"
+  # a LaunchAgent gets no shell PATH: node's and whisperkit-cli's folders, then Homebrew's (Apple silicon, Intel)
+  WK=$(command -v whisperkit-cli 2>/dev/null)
+  HUBPATH=${CHUMS_NODE:h}${WK:+:${WK:h}}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+  cat > $hub <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$CHUMS_LABEL_PREFIX.hub</string>
+  <key>ProgramArguments</key><array><string>$APPX</string><string>/usr/bin/caffeinate</string><string>-s</string><string>$CHUMS_NODE</string><string>$ROOT/hub/hub.mjs</string></array>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$HUBPATH</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>$HOME/.chums/hub.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.chums/hub.log</string>
+</dict></plist>
+PL
+  chums_reload $CHUMS_LABEL_PREFIX.hub $hub && ok "hub: $hub (log ~/.chums/hub.log)"
+  if command -v tailscaled >/dev/null; then
+    tsd=$LA/$CHUMS_LABEL_PREFIX.tailscaled.plist
+    cat > $tsd <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$CHUMS_LABEL_PREFIX.tailscaled</string>
+  <key>ProgramArguments</key><array><string>$APPX</string><string>$(command -v tailscaled)</string><string>--tun=userspace-networking</string>
+    <string>--statedir=$HOME/.chums/tailscale</string><string>--socket=$HOME/.chums/tailscale/tailscaled.sock</string><string>--port=0</string></array>
+  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$HOME/.chums/tailscale/tailscaled.log</string><key>StandardErrorPath</key><string>$HOME/.chums/tailscale/tailscaled.log</string>
+</dict></plist>
+PL
+    chums_reload $CHUMS_LABEL_PREFIX.tailscaled $tsd && ok "tailscaled: $tsd"
+  fi
+fi
+
+print
+if (( missing )); then print "$missing missing. Install them and run bin/chums-setup again (details: docs/setup.md, \"What you need\")."; exit 1; fi
+print "Ready. Next: bin/chums-hub, then bin/chums-tunnel, then bin/chums-install (or bin/chums-sim). See docs/setup.md."
+print "bin/chums-doctor checks the whole chain (sign-ins, hub, Funnel, Xcode, the watch) at any point."

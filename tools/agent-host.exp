@@ -1,0 +1,37 @@
+#!/usr/bin/expect -f
+# One agent's Claude Code session, run with no terminal window (its LaunchAgent starts this; bin/chums-agents installs
+# them). It gives the session a 120 × 40 terminal of its own, answers the two start-up screens it knows (trusting the
+# agent's own folder, confirming the development channel) and nothing else, then waits until the session ends;
+# launchd starts it again. Notes go to ~/.chums/agents/<id>.host.log.
+set id [lindex $argv 0]
+set root [file dirname [file dirname [file normalize [info script]]]]
+file mkdir "$env(HOME)/.chums/agents"
+set logf [open "$env(HOME)/.chums/agents/$id.host.log" a]
+proc note {msg} { global logf; puts $logf "[clock format [clock seconds] -format {%Y-%m-%d %H:%M:%S}] $msg"; flush $logf }
+
+# node: the one bin/chums-agents found (CHUMS_NODE in the LaunchAgent), else Homebrew's (Apple silicon, then Intel)
+set node [expr {[info exists env(CHUMS_NODE)] && $env(CHUMS_NODE) ne "" ? $env(CHUMS_NODE)
+                : [file executable /opt/homebrew/bin/node] ? "/opt/homebrew/bin/node" : "/usr/local/bin/node"}]
+if {[catch {exec $node "$root/tools/agent-cmd.mjs" $id} out]} { note "not started: $out"; sleep 30; exit 0 }
+set lines [split $out "\n"]
+cd [lindex $lines 0]
+log_user 0
+match_max 20000
+spawn -noecho {*}[lrange $lines 1 end]
+stty rows 40 columns 120 < $spawn_out(slave,name)
+note "started (pid [exp_pid])"
+
+# the start-up screens, only these and only in its first minute; words on screen are drawn with cursor moves between them
+set deadline [expr {[clock seconds] + 60}]
+set ready 0
+while {!$ready && [clock seconds] < $deadline} {
+    expect {
+        -re {trust\S{0,12}this\S{0,12}folder} { sleep 1.5; send "\r"; note "trusted its folder" }
+        -re {local\S{0,12}development} { sleep 1.5; send "\r"; note "confirmed the development channel"; set ready 1 }
+        timeout {}
+        eof { note "ended while starting"; exit 0 }
+    }
+}
+note [expr {$ready ? "running" : "running (no development-channel screen seen in its first minute)"}]
+expect -timeout -1 eof
+note "ended"
