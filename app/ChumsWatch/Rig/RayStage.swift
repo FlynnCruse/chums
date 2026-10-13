@@ -376,7 +376,8 @@ final class RayStage: Staged {
             for j in 0..<(dd.count / 6) {
                 let p0 = P2(dd[j * 6], dd[j * 6 + 1]), c = P2(dd[j * 6 + 2], dd[j * 6 + 3]), p1 = P2(dd[j * 6 + 4], dd[j * 6 + 5])
                 let m = (p0 + p1) / 2, out = m / max(0.01, simd_length(m))
-                let o: P2 = out * (0.035 * sin(st * 38 + Double(j) * 1.9) + 0.12 * outQ(min(1, st / 0.3)) - 0.12)
+                let wobble: Double = 0.035 * sin(st * 38 + Double(j) * 1.9), grow: Double = 0.12 * outQ(min(1, st / 0.3))
+                let o: P2 = out * (wobble + grow - 0.12)
                 var path = Path()
                 path.move(to: CGPoint(x: p0.x + o.x, y: p0.y + o.y))
                 path.addQuadCurve(to: CGPoint(x: p1.x + o.x, y: p1.y + o.y), control: CGPoint(x: c.x + o.x, y: c.y + o.y))

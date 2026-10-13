@@ -27,7 +27,7 @@ enum Strokes {
         (0...48).map { i in let a = a0 + (a1 - a0) * Double(i) / 48; return c + P2(cos(a) * (rx ?? r), sin(a) * r) }
     }
     static func mirrored(_ g: [P2]) -> [P2] { g.map { P2(-$0.x, $0.y) } }
-    static func mix(_ a: [P2], _ b: [P2], _ k: Double) -> [P2] { zip(a, b).map { $0 + ($1 - $0) * k } }
+    static func mix(_ a: [P2], _ b: [P2], _ k: Double) -> [P2] { zip(a, b).map { (p: P2, q: P2) -> P2 in p + (q - p) * k } }
     static func length(_ g: [P2]) -> Double { zip(g, g.dropFirst()).reduce(0) { $0 + simd_length($1.1 - $1.0) } }
 
     @inline(__always) static func hash(_ a: Double, _ b: Double) -> Double {

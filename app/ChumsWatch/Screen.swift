@@ -221,7 +221,8 @@ final class ScreenModel {
     static func voiceLike(_ t: Double) -> Double {
         let word = 0.5 + 0.5 * sin(t * 2.3) * sin(t * 1.1 + 1)
         let syllable = max(0, sin(t * TAU * 4.7)) * (0.6 + 0.4 * sin(t * 13.1))
-        return clamp(0.12 + 0.75 * syllable * (0.35 + 0.65 * max(0, word)), 0, 1)
+        let level: Double = 0.12 + 0.75 * syllable * (0.35 + 0.65 * max(0, word))
+        return clamp(level, 0, 1)
     }
 
     // MARK: touch

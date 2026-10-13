@@ -184,13 +184,15 @@ enum Chalk {
         var out: [P2] = [pts[0]]
         for i in 0..<(m - 1) {
             let p0 = pts[max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[min(m - 1, i + 2)]
-            let per = max(1, min(8, Int(simd_length(p2 - p1) / 0.6)))
+            let gap: Double = simd_length(p2 - p1)
+            let per = max(1, min(8, Int(gap / 0.6)))
             for k in 1...per {
                 let u = Double(k) / Double(per), u2 = u * u, u3 = u2 * u
                 let a: P2 = p1 * 2, b: P2 = (p2 - p0) * u
                 let c1: P2 = p0 * 2 - p1 * 5, c2: P2 = p2 * 4 - p3, c: P2 = (c1 + c2) * u2
                 let d1: P2 = p1 * 3 - p0, d2: P2 = p3 - p2 * 3, d: P2 = (d1 + d2) * u3
-                out.append((a + b + c + d) * 0.5)
+                let sum: P2 = a + b + c + d
+                out.append(sum * 0.5)
             }
         }
         return out

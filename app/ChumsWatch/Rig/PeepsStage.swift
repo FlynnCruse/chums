@@ -259,7 +259,10 @@ final class PeepsStage: Staged {
         bubbles.removeAll { $0.y < -$0.r - 6 || $0.y > 262 + $0.r }
         // they watch the biggest one near them
         let c = CGPoint(x: Double(eyes.l.x + eyes.r.x) / 2, y: Double(eyes.l.y + eyes.r.y) / 2)
-        if let b = bubbles.filter({ $0.pop == nil && $0.y < 236 && $0.y > 20 }).max(by: { $0.r / (hypot($0.x - c.x, $0.y - c.y) + 40) < $1.r / (hypot($1.x - c.x, $1.y - c.y) + 40) }) {
+        // the bubble that draws the eyes most: big and near
+        let cx = Double(c.x), cy = Double(c.y)
+        func pull(_ b: Bubble) -> Double { b.r / (hypot(b.x - cx, b.y - cy) + 40) }
+        if let b = bubbles.filter({ $0.pop == nil && $0.y < 236 && $0.y > 20 }).max(by: { pull($0) < pull($1) }) {
             look = CGPoint(x: b.x, y: b.y); lookFor = max(lookFor, 0.35)
         }
     }
@@ -343,8 +346,9 @@ final class PeepsStage: Staged {
         let c = CGPoint(x: p.cx + off.x + head.x + sin(t * TAU * 8) * 5 * shakeOff, y: p.cy + off.y + head.y + hopY)
         let rot = p.tilt + (dizzyT != nil ? sin(dz * 3.1) * 0.2 * orbit : 0) + sin(t * 1.6) * 0.12 * wooze
         let ca = cos(rot), sa = sin(rot), R = 6 * orbit
-        var pos = [CGPoint(x: c.x - sep * ca + cos(orbitA) * R, y: c.y - sep * sa + sin(orbitA) * R),
-                   CGPoint(x: c.x + sep * ca - cos(orbitA) * R, y: c.y + sep * sa - sin(orbitA) * R)]
+        let cx = Double(c.x), cy = Double(c.y)
+        let dx: Double = sep * ca, dy: Double = sep * sa, ox: Double = cos(orbitA) * R, oy: Double = sin(orbitA) * R
+        var pos = [CGPoint(x: cx - dx + ox, y: cy - dy + oy), CGPoint(x: cx + dx - ox, y: cy + dy - oy)]
         pos[0].y += sin(t * 2.1) * 5 * wooze; pos[1].y += sin(t * 2.1 + 2.2) * 5 * wooze          // woozy: out of step
         eyes = (pos[0], pos[1], w, h)
 
@@ -470,7 +474,8 @@ final class PeepsStage: Staged {
         // dizzy: a ring of little glass beads circling over them
         if halo > 0, let d = dizzyT {
             let k = clamp(d / 0.3, 0, 1)
-            let cx = Double(f.eye[0].p.x + f.eye[1].p.x) / 2, cy = max(34, Double(min(f.eye[0].p.y, f.eye[1].p.y)) - f.h * 0.55 - 10)
+            let cx: Double = Double(f.eye[0].p.x + f.eye[1].p.x) / 2, top: Double = Double(min(f.eye[0].p.y, f.eye[1].p.y))
+            let cy: Double = max(34, top - f.h * 0.55 - 10)
             for i in 0..<5 {
                 let a = t * TAU * 1.1 + Double(i) * TAU / 5, depth = sin(a), x = cx + cos(a) * 28 * k, y = cy + depth * 6, rad = 3 + 1 * depth
                 bead(ctx.faded(k * (0.55 + 0.45 * (depth + 1) / 2)), x: x, y: y, r: rad)

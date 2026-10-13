@@ -137,7 +137,7 @@ final class Yarn {
         let span = simd_length(tip - a)
         let len = onSpool < 0.02 ? 26.0 : max(26 * (1 - onSpool), span * (1 + slack))
         if rope.isEmpty {
-            rope = (0..<Self.K).map { i in a + (tipFree - a) * (Double(i) / Double(Self.K - 1)) }; was = rope
+            rope = (0..<Self.K).map { (i: Int) -> P2 in a + (tipFree - a) * (Double(i) / Double(Self.K - 1)) }; was = rope
             // turned from the start so the thread leaves it where it should
             for _ in 0..<60 {
                 let v = simd_normalize(q.act(endLocal)), ax = simd_cross(v, toward), s = simd_length(ax)

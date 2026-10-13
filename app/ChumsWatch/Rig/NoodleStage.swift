@@ -152,12 +152,12 @@ final class NoodleStage: Staged {
                     if i + 1 < legs.count && s > end - r {
                         let a = Self.ease((s - (end - r)) / (2 * r))
                         let p1 = pose(leg: i, at: min(d, L)), p2 = pose(leg: i + 1, at: max(0, s - end))
-                        return (0..<NoodleStage.N).map { p1[$0] * (1 - a) + p2[$0] * a }
+                        return (0..<NoodleStage.N).map { (j: Int) -> V3 in p1[j] * (1 - a) + p2[j] * a }
                     }
                     if i > 0 && s < start + r {
                         let a = Self.ease((s - (start - r)) / (2 * r))
                         let p1 = pose(leg: i - 1, at: NoodleStage.travel[legs[i - 1].edge].last!), p2 = pose(leg: i, at: d)
-                        return (0..<NoodleStage.N).map { p1[$0] * (1 - a) + p2[$0] * a }
+                        return (0..<NoodleStage.N).map { (j: Int) -> V3 in p1[j] * (1 - a) + p2[j] * a }
                     }
                     return pose(leg: i, at: d)
                 }
@@ -375,8 +375,9 @@ final class NoodleStage: Staged {
             P[i].y = Self.ground + (P[i].y - Self.ground) * (1 + breathe) * stretch.k
         }
         // the head nods: the last stretch of it turns about where the neck starts; the knock starts from rest
-        let nodWant: Double = state == .needs ? 0.3 * max(0, sin(min(1, knock / 1.0) * 4 * .pi)) * Self.ease(knock / 0.15)
-            : state == .speaking ? voice * 0.15 : 0
+        let knockTurn: Double = min(1, knock / 1.0) * 4 * Double.pi
+        let knockNod: Double = 0.3 * max(0, sin(knockTurn)) * Self.ease(knock / 0.15)
+        let nodWant: Double = state == .needs ? knockNod : state == .speaking ? voice * 0.15 : 0
         let wn = TAU * 2.5
         nod.v += (-wn * wn * (nod.a - nodWant) - 2 * wn * nod.v) * dt; nod.a += nod.v * dt
         if abs(nod.a) > 1e-4 {
@@ -429,9 +430,12 @@ final class NoodleStage: Staged {
             toward = fw - P2(W[n - 1].x, W[n - 1].y)
             let l = simd_length(toward); if l > 34 { toward *= 34 / l }
         }
-        let wr = TAU * 1.5, wj = TAU * 2.2
-        reach.v += ((toward - reach.p) * (wr * wr) - reach.v * (2 * 0.5 * wr)) * dt; reach.p += reach.v * dt
-        jig.v += (jig.p * (-wj * wj) - jig.v * (2 * 0.3 * wj)) * dt; jig.p += jig.v * dt
+        // in parts, with their types: whole, these were more than Xcode 26.6's type checker would take
+        let wr: Double = TAU * 1.5, wj: Double = TAU * 2.2
+        let reachPull: P2 = (toward - reach.p) * (wr * wr), reachDamping: P2 = reach.v * (2 * 0.5 * wr)
+        reach.v += (reachPull - reachDamping) * dt; reach.p += reach.v * dt
+        let jigPull: P2 = jig.p * (-wj * wj), jigDamping: P2 = jig.v * (2 * 0.3 * wj)
+        jig.v += (jigPull - jigDamping) * dt; jig.p += jig.v * dt
         let jl = simd_length(jig.p); if jl > 26 { jig.p *= 26 / jl }
         hop.v += 950 * dt; hop.y += hop.v * dt; if hop.y > 0 { if hop.v > 120 { flow.kickWant = max(flow.kickWant, 0.04) }; hop.y = 0; hop.v = 0 }
         happyFor = max(0, happyFor - dt)
@@ -770,7 +774,8 @@ final class NoodleStage: Staged {
                         return Double(ao[i * m + k0]) * (1 - wk) + Double(ao[i * m + k0 + 1]) * wk
                     }
                     let sh = aoAt(i0) * (1 - wi) + aoAt(i0 + 1) * wi
-                    let zc = clamp(Double(zb[idx]) / 60, -1, 1), cue = 1 - 0.25 * (0.5 - 0.5 * zc)
+                    let zc: Double = clamp(Double(zb[idx]) / 60, -1, 1)
+                    let cue: Double = 1 - 0.25 * (0.5 - 0.5 * zc)
                     col = col * (one - dark * sh) * cue
                     let a = Double(cov)
                     px[o] = UInt8(clamp(col.x, 0, 1) * a * 255 + 0.5)
@@ -818,7 +823,8 @@ final class NoodleStage: Staged {
         }
         let line = StrokeStyle(lineWidth: 1.6, lineCap: .round)
         for side in [-1.0, 1.0] {
-            let dir = Self.unit(fd + right * (side * 0.42) + up * 0.1)
+            let aside: V3 = right * (side * 0.42), lift: V3 = up * 0.1
+            let dir = Self.unit(fd + aside + lift)
             if dir.z < 0.12 { continue }
             let at: V3 = E - tE * (0.55 * R) + dir * R
             let pp = project(at), s = pp.s

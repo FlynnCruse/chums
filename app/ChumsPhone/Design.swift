@@ -53,8 +53,9 @@ struct EdgeFade: View {
     var topReach: CGFloat = 30, topDepth: CGFloat = 0.25        // gone before the name under the character
     var bottomReach: CGFloat = 14, bottomDepth: CGFloat = 0.6   // gone by the middle of the box
 
-    private static let stops: [Gradient.Stop] = stride(from: 0.0, through: 1.0, by: 0.0625).map { t in
-        .init(color: .black.opacity(t * t * (3 - 2 * t)), location: t)
+    private static let stops: [Gradient.Stop] = stride(from: 0.0, through: 1.0, by: 0.0625).map { (t: Double) -> Gradient.Stop in
+        let eased: Double = t * t * (3 - 2 * t)
+        return Gradient.Stop(color: Color.black.opacity(eased), location: CGFloat(t))
     }
 
     var body: some View {

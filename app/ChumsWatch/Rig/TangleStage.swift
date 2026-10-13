@@ -867,7 +867,7 @@ final class TangleStage: Staged {
         }
         // keep last frame's way unless another is clearly shorter (switching would make the arm jump)
         if let k = kept, let b = best, k.len < b.len * 1.15 { best = k } else { keep = bestKind }
-        guard let b = best else { return (1...count).map { p0 + (p1 - p0) * (Double($0) / Double(count)) } }
+        guard let b = best else { return (1...count).map { (j: Int) -> P2 in p0 + (p1 - p0) * (Double(j) / Double(count)) } }
         let l0 = rho * b.a0, ls = simd_length(b.q1 - b.q0)
         return (1...count).map { k in
             let x = b.len * Double(k) / Double(count)
@@ -905,8 +905,9 @@ final class TangleStage: Staged {
     private static let mini: Path = {
         var p: [P2] = []
         for i in 0..<90 {
-            let s = Double(i) / 89, th = TAU * 5 * s, c = P2(cos(TAU * 1.2 * s), sin(TAU * 1.2 * s)) * 30
-            p.append(c + P2(cos(th), sin(th) * 0.8) * (52 + 10 * sin(TAU * 3 * s)))
+            let s = Double(i) / 89, th: Double = TAU * 5 * s, c: P2 = P2(cos(TAU * 1.2 * s), sin(TAU * 1.2 * s)) * 30
+            let reach: Double = 52 + 10 * sin(TAU * 3 * s)
+            p.append(c + P2(cos(th), sin(th) * 0.8) * reach)
         }
         var path = Path(); addRun(&path, p, 0, p.count - 1)
         return path
@@ -917,8 +918,9 @@ final class TangleStage: Staged {
         if sparkle > 0.02 {
             for (i, d) in ScribbleArt.deco("01").enumerated() where d.kind == 1 {
                 let c = Self.centroid(d.pts), ph = t * 5 + Double(i) * 1.7
-                let k = (0.7 + 0.3 * sin(ph)) * sparkle * (state == .done ? outQ(min(1, stateT / 0.5)) : 1)
-                let pts = d.pts.map { c * (0.9 + 0.1 * sparkle) + ($0 - c) * k }
+                let grow: Double = state == .done ? outQ(min(1, stateT / 0.5)) : 1
+                let k: Double = (0.7 + 0.3 * sin(ph)) * sparkle * grow, home: P2 = c * (0.9 + 0.1 * sparkle)
+                let pts: [P2] = d.pts.map { (q: P2) -> P2 in home + (q - c) * k }
                 g.faded(sparkle * (0.75 + 0.25 * sin(ph))).fill(Strokes.smoothClosed(pts), with: .color(Self.blue))
             }
         }
@@ -1001,7 +1003,10 @@ enum ScribbleArt {
     private static func values(_ s: String) -> [Double] {
         guard let d = Data(base64Encoded: s) else { return [] }
         let b = [UInt8](d)
-        return stride(from: 0, to: b.count - 1, by: 2).map { i in Double(Int16(bitPattern: UInt16(b[i]) | UInt16(b[i + 1]) << 8)) / 8 }
+        return stride(from: 0, to: b.count - 1, by: 2).map { (i: Int) -> Double in
+            let bits: UInt16 = UInt16(b[i]) | (UInt16(b[i + 1]) << 8)
+            return Double(Int16(bitPattern: bits)) / 8
+        }
     }
     private static let decos: [String: [(kind: Int, pts: [P2])]] = decoRaw.mapValues { raw in
         let v = values(raw.1), h = raw.0
