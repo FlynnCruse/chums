@@ -55,7 +55,12 @@ function loadConfig() {
   cfg.port ??= 7717
   cfg.publicPort ??= 7718           // the watch API alone, for the tunnel
   cfg.token ??= crypto.randomBytes(18).toString('base64url')         // Claude Code sessions: channel and hooks, on this Mac
-  cfg.watchToken ??= crypto.randomBytes(18).toString('base64url')    // the watch, over the internet (watch API only)
+  // the watch, over the internet (watch API only); with watchTokenHash the token itself is kept elsewhere (1Password)
+  if (cfg.watchTokenHash == null) cfg.watchToken ??= crypto.randomBytes(18).toString('base64url')
+  else if (!/^[0-9a-f]{64}$/i.test(cfg.watchTokenHash)) {
+    console.error(`chums: watchTokenHash in ${CONFIG_PATH} is not a SHA-256 in hex (64 characters). bin/chums-token-ref writes it.`)
+    process.exit(1)
+  }
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), { mode: 0o600 })
   fs.chmodSync(CONFIG_PATH, 0o600)                  // the mode above applies only to a new file
   return cfg
@@ -1107,12 +1112,14 @@ function bearer(req) { const h = req.headers.authorization ?? ''; return h.start
 // compared as SHA-256 digests: always 32 bytes each, so timingSafeEqual never throws (a header's characters can be
 // more bytes than the token's) and the time taken doesn't depend on what was sent
 const digest = s => crypto.createHash('sha256').update(String(s)).digest()
-const same = (t, k) => !!k && crypto.timingSafeEqual(digest(t), digest(k))
+const same = (t, d) => !!d && crypto.timingSafeEqual(digest(t), d)
+const tokenDigest = cfg.token && digest(cfg.token)
+const watchDigest = cfg.watchTokenHash ? Buffer.from(cfg.watchTokenHash, 'hex') : cfg.watchToken && digest(cfg.watchToken)
 /// The request's URL, or null when it doesn't parse (e.g. "//"): answered with a 400, never a crash.
 function urlOf(req) { try { return new URL(req.url, 'http://x') } catch { return null } }
 // on this Mac either token works (the Simulator uses the watch's); from the internet only the watch's
-function authed(req) { const t = bearer(req); return same(t, cfg.token) || same(t, cfg.watchToken) }
-function watchAuthed(req) { return same(bearer(req), cfg.watchToken) }
+function authed(req) { const t = bearer(req); return same(t, tokenDigest) || same(t, watchDigest) }
+function watchAuthed(req) { return same(bearer(req), watchDigest) }
 
 const handle = async (req, res) => {
   const url = urlOf(req)

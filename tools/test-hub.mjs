@@ -2,6 +2,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
 import net from 'node:net'
+import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 // Hub safety checks against the running hub: delivery acks, spoken-verdict binding, cleanup on bye, the public door.
 // node tools/test-hub.mjs
@@ -235,6 +236,17 @@ const said = await fetch(`http://127.0.0.1:${noClaude.cfg.publicPort}/v1/say`, {
 const alive = await fetch(`http://127.0.0.1:${noClaude.cfg.port}/v1/ping`, { headers: { authorization: `Bearer ${noClaude.cfg.token}` } }).then(r => r.status, () => 0)
 ok(said.kind === 'soul' && /Claude Code/.test(said.error ?? '') && alive === 200, `without Claude Code a soul change says why (${said.error}) and the hub stays up`)
 noClaude.stop()
+// a watch token kept in 1Password: the hub has only its SHA-256 (watchTokenHash), checks the watch against it, and
+// makes no watchToken of its own
+const h3 = fs.mkdtempSync(path.join(os.tmpdir(), 'chums-test-')), wt = 'test-watch-hashed-' + Date.now(), hp = 17717 + Math.floor(Math.random() * 500) * 2
+fs.mkdirSync(path.join(h3, '.chums'))
+fs.writeFileSync(path.join(h3, '.chums/config.json'), JSON.stringify({ port: hp, publicPort: hp + 1, token: 'test-local-hashed', watchTokenHash: crypto.createHash('sha256').update(wt).digest('hex') }))
+const hashed = await startPrivateHub({ home: h3 })
+const pingWith = t => fetch(`http://127.0.0.1:${hp + 1}/v1/ping`, { headers: { authorization: `Bearer ${t}` } }).then(r => r.status, () => 0)
+ok(await pingWith(wt) === 200, 'watchTokenHash only: the token it hashes gets in on the public door')
+ok(await pingWith(wt + 'x') === 401, 'watchTokenHash only: another token is refused')
+ok(!('watchToken' in JSON.parse(fs.readFileSync(path.join(h3, '.chums/config.json'), 'utf8'))), 'watchTokenHash only: the hub writes no watchToken of its own')
+hashed.stop()
 // a settings file that doesn't parse stops the hub, untouched, with a message that doesn't quote it (it holds the tokens)
 for (const [file, text] of [['config.json', '{"token": "secret-token-1", "port": 1'], ['agents.json', '[{"id": "noodle", "sessionId": "keep-me"']]) {
   const h2 = fs.mkdtempSync(path.join(os.tmpdir(), 'chums-test-'))
