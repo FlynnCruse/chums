@@ -9,7 +9,7 @@ devices passes through a temporary file). What it does:
 The tokens in ~/.chums/config.json go only to your own hub and your own Funnel URL, and are never printed.
 Exit code: 0 when nothing failed, 1 otherwise. NO_COLOR=1 turns colours off.
 """
-import ipaddress, json, os, platform, re, shutil, socket, subprocess, sys, tempfile, time
+import hashlib, ipaddress, json, os, platform, re, shutil, socket, subprocess, sys, tempfile, time
 import urllib.error, urllib.request
 
 if {'-h', '--help'} & set(sys.argv[1:]):
@@ -113,6 +113,24 @@ def port_open(port, host='localhost'):           # whisperkit-cli serve listens 
 
 def launchd_loaded(label):
     return run(['launchctl', 'print', f'gui/{os.getuid()}/{label}'], timeout=5)[0] == 0
+
+
+def watch_hash(c):
+    """The SHA-256 (hex) the hub checks the watch's token against: watchTokenHash, else watchToken's."""
+    if c.get('watchTokenHash'): return str(c['watchTokenHash']).lower()
+    return hashlib.sha256(c['watchToken'].encode()).hexdigest() if c.get('watchToken') else None
+
+
+_watch_token = {}
+def watch_token(c):
+    """(the watch token, why there is none) for the self-tests: read from 1Password with watchTokenRef, else watchToken.
+    Asked of 1Password once per run."""
+    if not c.get('watchTokenRef'): return c.get('watchToken'), 'no watch token in config.json'
+    if not _watch_token:
+        account = ['--account', c['watchTokenAccount']] if c.get('watchTokenAccount') else []
+        rc, out, err = run(['op', 'read', *account, c['watchTokenRef']], timeout=60)
+        _watch_token['v'] = (out, None) if rc == 0 and out else (None, f'op read {c["watchTokenRef"]} failed ({err or "empty"})')
+    return _watch_token['v']
 
 
 # ------------------------------------------------------------------------------------------------------------------
@@ -256,7 +274,12 @@ else:
     if mode & 0o077: warn(f'~/.chums/config.json is readable by other users (mode {oct(mode)[2:]}); it holds the tokens', 'chmod 600 ~/.chums/config.json')
     dmode = os.stat(os.path.dirname(CONFIG)).st_mode & 0o777
     if dmode & 0o077: warn(f'~/.chums is open to other users (mode {oct(dmode)[2:]}); it holds your conversations and uploads', 'chmod 700 ~/.chums (the hub does it when it starts)')
-    if cfg.get('token') and cfg.get('watchToken'): ok(f'~/.chums/config.json: ports {cfg.get("port", 7717)} and {cfg.get("publicPort", 7718)}, both tokens set (not shown)')
+    if cfg.get('watchTokenHash') and not re.fullmatch(r'[0-9a-fA-F]{64}', str(cfg['watchTokenHash'])):
+        fail('watchTokenHash in ~/.chums/config.json is not a SHA-256 in hex: the hub will not start', 'bin/chums-token-ref <op://…> writes it')
+    elif cfg.get('token') and cfg.get('watchTokenHash'):
+        ok(f'~/.chums/config.json: ports {cfg.get("port", 7717)} and {cfg.get("publicPort", 7718)}, the token set, the watch token\'s SHA-256 only (the token is in 1Password: {cfg.get("watchTokenRef") or "no watchTokenRef"})')
+        if cfg.get('watchToken'): warn('watchToken is in config.json too: the hub uses watchTokenHash and ignores it', 'bin/chums-token-ref <op://…> removes it')
+    elif cfg.get('token') and cfg.get('watchToken'): ok(f'~/.chums/config.json: ports {cfg.get("port", 7717)} and {cfg.get("publicPort", 7718)}, both tokens set (not shown)')
     else: fail('~/.chums/config.json is missing a token', ['restart the hub: it adds the missing token', 'then bin/chums-install, so the watch app gets it'])
     if cfg.get('publicURL'): ok(f'public URL {cfg["publicURL"]}')
     else: fail('no public URL yet: the watch reaches the hub only through it (the Simulator does not need it)', 'bin/chums-tunnel')
@@ -336,8 +359,10 @@ else:
     else:
         fail(f'the hub is not running (nothing answers on 127.0.0.1:{port})', start_fix)
     if hub_up:
-        s2, _, _ = http(f'http://127.0.0.1:{pport}/v1/ping', cfg.get('watchToken', ''))
-        if s2 == 200: ok(f'the watch side answers on 127.0.0.1:{pport} (what Funnel forwards to)')
+        wtok, why = watch_token(cfg)
+        s2 = http(f'http://127.0.0.1:{pport}/v1/ping', wtok)[0] if wtok else None
+        if not wtok: note(f'skipped the watch side\'s check: {why}')
+        elif s2 == 200: ok(f'the watch side answers on 127.0.0.1:{pport} (what Funnel forwards to)')
         else: fail(f'the watch side on 127.0.0.1:{pport} does not answer ({s2 or "no connection"})', ['restart the hub', start_fix])
         if hub_launchd and launchd_loaded(hub_label): note(f'it runs as the LaunchAgent {hub_label}, log in ~/.chums/hub.log')
         else: note('it runs in a terminal and stops when that terminal closes (bin/chums-setup --launchd runs it at login)')
@@ -436,7 +461,8 @@ else:
 
 # the public address, as the watch sees it: public DNS, then HTTPS through Funnel
 url = (cfg or {}).get('publicURL') or (f'https://{host}' if host else None)
-if url and cfg and cfg.get('watchToken'):
+wtok, why = watch_token(cfg) if url and cfg else (None, None)
+if url and wtok:
     name = re.sub(r'^https?://', '', url).split('/')[0].split(':')[0]
     ips = []
     if shutil.which('dig'):
@@ -454,7 +480,7 @@ if url and cfg and cfg.get('watchToken'):
     t0 = time.time()
     rc, out, err = run(['curl', '-sS', '--max-time', '15', '-o', '/dev/null', '-w', '%{http_code} %{remote_ip}',
                         '-H', '@-', f'{url.rstrip("/")}/v1/ping'],
-                       timeout=25, stdin=f'Authorization: Bearer {cfg["watchToken"]}\n')
+                       timeout=25, stdin=f'Authorization: Bearer {wtok}\n')
     took = time.time() - t0
     parts = out.split()
     code = parts[0] if parts else None
@@ -480,6 +506,8 @@ if url and cfg and cfg.get('watchToken'):
         fail(f'{url}/v1/ping failed: {err or f"HTTP {code}"}',
              ['tailscale --socket ~/.chums/tailscale/tailscaled.sock funnel status shows what Funnel serves',
               'the first HTTPS request to a new name waits while Tailscale gets its certificate; try again in a minute'])
+elif url and cfg:
+    note(f'skipped the internet check: {why}')
 elif cfg:
     note('skipped the internet check: no public URL yet')
 
@@ -544,12 +572,14 @@ if os.path.isfile(HUBCONFIG):
     try: hosts = json.loads(m_hosts.group(1)) if m_hosts else []
     except ValueError: hosts = []
     built = f'built {m_build.group(1)}' if m_build else 'last build'
-    if cfg and m_tok and m_tok.group(1) != cfg.get('watchToken'):
+    if cfg and m_tok and hashlib.sha256(m_tok.group(1).encode()).hexdigest() != watch_hash(cfg):
         fail(f'the watch app ({built}) has an older watch token than the hub (the watch shows "Hub refused the token")', 'bin/chums-install')
     elif cfg and cfg.get('publicURL') and cfg['publicURL'] not in hosts:
         fail(f'the watch app ({built}) has another hub address than {cfg["publicURL"]}', 'bin/chums-install')
     elif cfg:
         ok(f'the watch app ({built}) has the hub\'s current token and address')
+elif (cfg or {}).get('watchTokenRef'):
+    note('no HubConfig.swift: with the watch token in 1Password, bin/chums-install deletes it after each build')
 else:
     note('the watch app has not been built from this checkout yet (bin/chums-install builds it)')
 
