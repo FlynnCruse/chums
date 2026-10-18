@@ -109,6 +109,8 @@ if ! grep -q "BUILD SUCCEEDED" "$LOG"; then
   echo "Known errors and their fixes: docs/troubleshooting.md"
   exit 1
 fi
+# with the watch token in 1Password (bin/chums-token-ref), no copy stays in the checkout: gen-config writes it each time
+[[ -n $(chums_cfg watchTokenRef) ]] && rm -f "$ROOT/app/ChumsWatch/HubConfig.swift"
 
 ILOG=$(mktemp)
 # The wireless connection to the watch often drops the first attempt or two; retry.
