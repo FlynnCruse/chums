@@ -261,7 +261,8 @@ What it does:
    Developer Mode is off. It also finds the iPhone, for the iPhone app.
 2. Writes `app/ChumsWatch/HubConfig.swift` from `~/.chums/config.json`: the public URL and the watch token
    (`tools/gen-config.sh`). The file is git-ignored; never commit it or share a built app, since the token can be read
-   from it.
+   from it. With the watch token in 1Password (`watchTokenRef`, below), it reads the token with `op read`, and the
+   file is deleted after the build.
 3. Picks the signing team (`tools/pick-team.py`): `"team"` in config.json or `CHUMS_TEAM` if set, else a paid team in
    Xcode, else your free Personal Team.
 4. Picks the bundle ID: `"bundleId"` in config.json or `CHUMS_BUNDLE` if set, else `dev.chums.<team ID>` (the team
@@ -291,7 +292,23 @@ If the build stops at "Your team has no devices from which to generate a provisi
 
 **How to know it worked:** it prints `Chums is running on the watch.` and `Chums is installed on <your iPhone>.`, and
 the watch shows a character, not "HUB OFFLINE" (it says "NOT RUNNING" until its agent starts in step 10).
-`bin/chums-doctor` shows `the watch app (built …) has the hub's current token and address`.
+`bin/chums-doctor` shows `the watch app (built …) has the hub's current token and address` (with the watch token in
+1Password, a note that `HubConfig.swift` was deleted after the build).
+
+### The watch token in 1Password (optional)
+
+To keep the watch token out of `~/.chums/config.json`, store it in a 1Password item and run, with the
+[1Password CLI](https://developer.1password.com/docs/cli/) signed in:
+
+```bash
+bin/chums-token-ref "op://<vault>/<item>/<field>" --account <account>   # --account only for a non-default account
+```
+
+It writes the token's SHA-256 (`watchTokenHash`) and the reference (`watchTokenRef`, `watchTokenAccount`) to
+config.json and removes `watchToken`. Running it again with the same arguments changes nothing. Then restart the hub,
+and run `bin/chums-install` if the token in 1Password isn't the one the apps were built with. Each install reads the
+token with `op read`, so 1Password may ask you to unlock it. `bin/chums-doctor` reads it the same way for its checks,
+and skips them with a note when `op` can't.
 
 ## 10. Start the agents
 
@@ -616,6 +633,7 @@ Each one is an environment variable, or a key in `~/.chums/config.json`, or the 
 | | `port` | `7717` | The hub's local port |
 | | `publicPort` | `7718` | The watch API's port (what Funnel forwards to) |
 | | `publicURL` | set by `bin/chums-tunnel` | The address built into the watch app |
+| | `watchTokenRef`, `watchTokenAccount`, `watchTokenHash` | not set | The watch token in 1Password: its `op://` reference, the 1Password account, and its SHA-256, which the hub checks against instead of `watchToken` (written by `bin/chums-token-ref`, [step 9](#the-watch-token-in-1password-optional)) |
 | | `ownerName` | `the user` | What the agents call you, e.g. `"Sam"` |
 | | `diagnostics` | `false` | `true`: the apps log their frame rate and memory to the hub every 30 s (for working on them; run `bin/chums-install` after) |
 | `CHUMS_TEAM` | `team` | picked by `tools/pick-team.py` | Apple developer team for signing |

@@ -37,6 +37,13 @@ public listener a wrong token waits one second before the `401`.
 compiled into the watch app, the iPhone app and the iPhone's widgets. That file is git-ignored. Do not commit it, and
 do not share a built `.app` or `.ipa`: the token can be read out of the binary.
 
+The watch token can be kept in 1Password instead of in `config.json`. `bin/chums-token-ref op://<vault>/<item>/<field>`
+(add `--account <account>` for an account other than the default) reads it with `op read`, writes its SHA-256
+(`watchTokenHash`) and the reference (`watchTokenRef`, and `watchTokenAccount`) to `config.json`, and removes
+`watchToken`. The hub then compares the SHA-256 of the token sent with `watchTokenHash`, and creates no `watchToken`.
+`tools/gen-config.sh` reads the token from 1Password when the apps are built, and `bin/chums-install` deletes
+`HubConfig.swift` after the build. The built apps in `app/build` still hold the token.
+
 ## What the watch token allows
 
 With the watch token, a client on the internet can do what the watch and the iPhone app do:
@@ -80,6 +87,9 @@ If the watch token may have leaked (a lost watch, a shared build, a log or scree
 4. Run `bin/chums-install` to build the new token into the watch app and the iPhone app.
 5. Restart the Claude Code sessions so the channel and hooks read the new `token`: `bin/chums-agents install` for the
    background agents, and any `bin/chums-claude` session in a terminal. Codex agents restart with the hub.
+
+With the watch token in 1Password (`watchTokenRef`), step 2 for the watch token is different: put a new random value
+in the 1Password item, then run `bin/chums-token-ref <op://…>` again. It writes the new `watchTokenHash`.
 
 To take the watch API off the internet at once: `tailscale --socket ~/.chums/tailscale/tailscaled.sock funnel reset`.
 
