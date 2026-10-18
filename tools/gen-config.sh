@@ -15,11 +15,11 @@ if cfg.get('watchTokenRef'):
     except FileNotFoundError: sys.exit("watchTokenRef is set but the 1Password CLI isn't installed: brew install 1password-cli")
     token = r.stdout.rstrip('\n')
     if r.returncode or not token: sys.exit(f"op read {cfg['watchTokenRef']} failed: {r.stderr.strip() or 'empty'}")
-    # a token the hub would refuse makes a watch app that can't connect
-    if hashlib.sha256(token.encode()).hexdigest() != (cfg.get('watchTokenHash') or '').lower():
-        sys.exit(f"the token at {cfg['watchTokenRef']} doesn't match watchTokenHash: run bin/chums-token-ref again, then restart the hub")
 else:
-    token = cfg['watchToken']
+    token = cfg.get('watchToken') or sys.exit("no watchToken (or watchTokenRef) in ~/.chums/config.json: start the hub once, it writes one")
+# a token the hub would refuse makes a watch app that can't connect
+if cfg.get('watchTokenHash') and hashlib.sha256(token.encode()).hexdigest() != str(cfg['watchTokenHash']).lower():
+    sys.exit("the watch token doesn't match watchTokenHash: run bin/chums-token-ref again, then restart the hub")
 # The watch reaches the Mac only through its public https address (bin/chums-tunnel, cfg "publicURL"): watchOS doesn't
 # support apps reaching a home-network address, and probing one on other networks would hand the token to whoever has
 # that address. 127.0.0.1 is for the Simulator (the app drops it on a real watch).
