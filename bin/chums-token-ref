@@ -1,0 +1,45 @@
+#!/bin/zsh
+# Keeps the watch token in 1Password instead of on this Mac. Reads the token at an op:// reference (op read), writes
+# its SHA-256 ("watchTokenHash") and the reference ("watchTokenRef", and "watchTokenAccount" with --account) to
+# ~/.chums/config.json, and removes "watchToken". The hub then checks the watch against the hash, and bin/chums-install
+# reads the token from 1Password when it builds the app. Run it again any time: the same arguments give the same file.
+# Usage: bin/chums-token-ref <op://vault/item/field> [--account <account>]
+# Then restart the hub, and run bin/chums-install if the token in 1Password isn't the one the watch app was built with.
+set -e
+source "${0:A:h:h}/tools/common.zsh"
+chums_help "$@"
+chums_need op "Install the 1Password CLI: brew install 1password-cli"
+USAGE="usage: bin/chums-token-ref <op://vault/item/field> [--account <account>]"
+REF= ACCOUNT=
+while (( $# )); do
+  case $1 in
+    --account) [[ -n ${2:-} ]] || chums_die $USAGE; ACCOUNT=$2; shift 2 ;;
+    op://*) REF=$1; shift ;;
+    *) chums_die $USAGE ;;
+  esac
+done
+[[ -n $REF ]] || chums_die $USAGE
+mkdir -p $CHUMS_HOME && chmod 700 $CHUMS_HOME
+python3 - "$CHUMS_CONFIG" "$REF" "$ACCOUNT" <<'EOF'
+import hashlib, json, os, subprocess, sys
+path, ref, account = sys.argv[1:]
+r = subprocess.run(['op', 'read', *(['--account', account] if account else []), ref], capture_output=True, text=True)
+token = r.stdout.rstrip('\n')
+if r.returncode or not token: sys.exit(f"chums: op read {ref} failed: {r.stderr.strip() or 'empty'}")
+cfg = {}
+if os.path.exists(path):
+    # the parser's message isn't shown: it quotes the file, which can hold a token
+    try: cfg = json.load(open(path))
+    except ValueError: sys.exit(f"chums: {path} is not valid JSON. Fix it (bin/chums-doctor says where), then run this again.")
+cfg['watchTokenHash'] = hashlib.sha256(token.encode()).hexdigest()
+cfg['watchTokenRef'] = ref
+if account: cfg['watchTokenAccount'] = account
+else: cfg.pop('watchTokenAccount', None)
+cfg.pop('watchToken', None)
+tmp = path + '.tmp'
+with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as f:
+    os.fchmod(f.fileno(), 0o600)
+    json.dump(cfg, f, indent=2)
+os.replace(tmp, path)
+print(f"{path}: watchTokenHash and watchTokenRef set, no watchToken. Restart the hub, then bin/chums-install.")
+EOF
