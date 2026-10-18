@@ -1,8 +1,8 @@
 #!/bin/zsh
 # Writes app/ChumsWatch/HubConfig.swift from ~/.chums/config.json: the hub's public address, the watch's token and a
 # build stamp. bin/chums-install runs it. The generated file is git-ignored (it holds the token).
-# With "watchTokenRef" (bin/chums-token-ref) the token is read from 1Password (op read) and checked against
-# "watchTokenHash"; else it is "watchToken".
+# With "watchTokenRef" (bin/chums-token-ref) the token is read from 1Password (op read), else it is "watchToken";
+# either is checked against "watchTokenHash" when that is set.
 ROOT="${0:A:h:h}"
 [[ -f ~/.chums/config.json ]] || { echo "no ~/.chums/config.json yet: start the hub once (bin/chums-hub), it writes one" >&2; exit 1 }
 python3 - "$ROOT" <<'EOF'
