@@ -32,7 +32,7 @@ HOOKS_JSON="$CHUMS_ROOT/channel/hooks.json"
 hook=$CHUMS_ROOT/channel/chums-hook.mjs
 HOOK=$(jstr "node ${(qq)hook}")                  # quoted for the shell, then for JSON: any folder name works
 cat > "$HOOKS_JSON" <<EOF
-{ "permissions": { "deny": ["Edit(~/.chums/souls/**)", "Write(~/.chums/souls/**)", "MultiEdit(~/.chums/souls/**)", "AskUserQuestion"], "allow": ["Read(~/.chums/uploads/**)"] },
+{ "permissions": { "deny": ["Edit(~/.chums/souls/**)", "AskUserQuestion"], "allow": ["Read(~/.chums/uploads/**)"] },
   "hooks": {
   "PreToolUse":          [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],
   "PostToolUse":         [{ "matcher": "*", "hooks": [{ "type": "command", "command": "$HOOK", "timeout": 2 }] }],

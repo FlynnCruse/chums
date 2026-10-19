@@ -26,7 +26,12 @@ set deadline [expr {[clock seconds] + 60}]
 set ready 0
 while {!$ready && [clock seconds] < $deadline} {
     expect {
-        -re {trust\S{0,12}this\S{0,12}folder} { sleep 1.5; send "\r"; note "trusted its folder" }
+        -re {trust\S{0,12}this\S{0,12}folder} {
+            sleep 1.5
+            # Claude Code 2.1.30x lists "No, exit" first and selected; older versions put "Yes" first
+            if {[regexp {❯\S{0,12}No\S{0,12}exit} $expect_out(buffer)]} { send "\033\[B"; sleep 0.5 }
+            send "\r"; note "trusted its folder"
+        }
         -re {local\S{0,12}development} { sleep 1.5; send "\r"; note "confirmed the development channel"; set ready 1 }
         timeout {}
         eof { note "ended while starting"; exit 0 }
