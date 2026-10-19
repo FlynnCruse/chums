@@ -62,9 +62,9 @@ const mcp = new Server(
       `${Owner}'s messages arrive as <channel source="chums" utterance_id="..." via="watch"> or via="phone"; from the watch they are voice transcripts, so expect recognition errors and read for intent.`,
       'Do the work exactly as if it had been typed here.',
       `Whenever you finish work ${OWNER} asked for from the watch, or you need ${OWNER}, call the chums_reply tool.`,
-      'The watch is a small conversational companion, not a reading surface: reply like a quick text message, about 8 words,',
-      `${MAX_WORDS} at most (the tool refuses longer). Result first, plain words, no preamble, no restating what was said,`,
-      'no explanations. If there is more to say, it stays on the Mac: say "Details on your Mac."',
+      `Each reply is spoken aloud: give a spoken update like a capable colleague's quick report, ${MAX_WORDS} words at most (the tool refuses longer).`,
+      'Lead with the result, then what you did and what you found that matters, in plain spoken sentences; no preamble, no restating what was said.',
+      `When ${OWNER} asks for details or more, give them: several chums_reply calls in a row, each a natural spoken chunk, or chums_show for anything long or visual (code, a diff, a table).`,
       `From the iPhone (via="phone") the reply is shown as text: give the answer itself in plain sentences, ${PHONE_WORDS} words at most, still no code, paths, URLs, markdown or lists.`,
       'Never include code, file paths, URLs, markdown or lists; they are read aloud.',
       "Set status: 'done' when finished, 'question' when you need an answer, 'blocked' when you cannot continue, 'working' only for a rare progress note on long tasks.",
@@ -86,11 +86,11 @@ const QUIET = { readOnlyHint: true, destructiveHint: false, idempotentHint: fals
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [{
     name: 'chums_reply',
-    description: `Speak one short sentence to ${OWNER} on the Apple Watch. Use after finishing or when you need ${OWNER}.`,
+    description: `Speak to ${OWNER} on the Apple Watch. Use after finishing or when you need ${OWNER}; call it again in a row to say more.`,
     inputSchema: {
       type: 'object',
       properties: {
-        text: { type: 'string', description: `One short spoken sentence, like a text message: about 8 words, ${MAX_WORDS} at most (to the iPhone: plain sentences, ${PHONE_WORDS} words at most). No code, paths or URLs.` },
+        text: { type: 'string', description: `A spoken update in plain sentences, result first: ${MAX_WORDS} words at most (to the iPhone: ${PHONE_WORDS} words at most). No code, paths or URLs.` },
         status: { type: 'string', enum: ['done', 'question', 'blocked', 'working'] },
       },
       required: ['text'],
@@ -107,7 +107,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         url: { type: 'string', description: 'A public web page to render at phone width (not one behind a login: screenshot the browser instead).' },
         file: { type: 'string', description: 'Absolute path of the file: HTML or SVG, PDF, Markdown, text or code, CSV or TSV, an image, a video (.mov, .mp4, .m4v), or a document macOS previews (Word, Excel, PowerPoint, Pages, Keynote, Numbers, RTF, EPUB, USDZ).' },
         title: { type: 'string', description: 'Two to four words, shown on the watch, e.g. "Stripe dashboard".' },
-        text: { type: 'string', description: `One short spoken line, like a reply: ${MAX_WORDS} words at most.` },
+        text: { type: 'string', description: `A spoken line about what is shown: ${MAX_WORDS} words at most.` },
       },
     },
     ...(toolsOnly ? { annotations: QUIET } : {}),
@@ -149,7 +149,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
   const words = String(text ?? '').trim().split(/\s+/).filter(Boolean).length, limit = wordsFor(lastVia)
   if (words > limit) {
     const where = lastVia === 'phone' ? 'the iPhone' : 'the watch'
-    return { content: [{ type: 'text', text: `Too long for ${where} (${words} words). Say it again in ${limit} words or fewer; details stay on the Mac.` }], isError: true }
+    return { content: [{ type: 'text', text: `Too long for ${where} (${words} words). Say it again in ${limit} words or fewer, or split it over several chums_reply calls.` }], isError: true }
   }
   try {
     await hub('/channel/reply', { sessionId, text: String(text), status })

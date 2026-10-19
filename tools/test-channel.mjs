@@ -47,24 +47,32 @@ await waitFor(m => m.id === 2)
 st = await watch('/v1/state?since=0')
 ok(/^(chumstest: )?Channel tests passed\.$/.test(st.spoken.at(-1)?.text ?? ''), `watch hears: "${st.spoken.at(-1)?.text}"`)
 
-// a reply longer than 15 words is refused, so the session says it again, shorter; the watch hears nothing
-send({ id: 9, method: 'tools/call', params: { name: 'chums_reply', arguments: { text: 'I ran every one of the channel tests twice and all ten of them passed without any flaky failures at all.', status: 'done' } } })
+// a spoken update of a few sentences reaches the watch whole
+const update = 'All ten channel tests pass. I ran them twice to rule out flaky failures, and fixed one slow reconnect in the hub along the way.'
+send({ id: 8, method: 'tools/call', params: { name: 'chums_reply', arguments: { text: update, status: 'done' } } })
+await waitFor(m => m.id === 8)
+ok((await watch('/v1/state?since=0')).spoken.at(-1)?.text?.endsWith('along the way.'), 'a 25-word update reaches the watch whole')
+
+// a reply longer than 45 words is refused, so the session says it again, shorter or split; the watch hears nothing
+const tooLong = `${update} Then I read every log line from the last run, checked each retry and timeout against the spec, and wrote down the three flaky spots I found for later in our notes.`
+send({ id: 9, method: 'tools/call', params: { name: 'chums_reply', arguments: { text: tooLong, status: 'done' } } })
 const long = await waitFor(m => m.id === 9)
 const st9 = await watch('/v1/state?since=0')
-ok(long.result?.isError && /Too long/.test(long.result.content[0].text) && !/flaky/.test(st9.spoken.at(-1)?.text ?? ''), 'a 21-word reply is refused and never reaches the watch')
+ok(long.result?.isError && /Too long/.test(long.result.content[0].text) && !/spec/.test(st9.spoken.at(-1)?.text ?? ''), `a ${tooLong.split(' ').length}-word reply is refused and never reaches the watch`)
 
 // from the iPhone: the order says so, and the reply can be a few sentences (the iPhone shows the text)
 await watch('/v1/say', { text: 'Tell chumstest what the label on this tube means', device: 'phone' })
 const phoneNote = await waitFor(m => m.method === 'notifications/claude/channel')
 ok(phoneNote.params.meta?.via === 'phone', `an order from the iPhone arrives via="${phoneNote.params.meta?.via}"`)
-const forty = 'It is a fluoride-free spearmint toothpaste. All-One is the maker\'s motto: one human family. The label also says seventy percent organic ingredients and that it helps freshen breath and whiten teeth without any harsh additives at all.'
-send({ id: 10, method: 'tools/call', params: { name: 'chums_reply', arguments: { text: forty, status: 'done' } } })
+// between the watch's limit and the iPhone's: shown on the iPhone, too long for the watch
+const fifty = 'It is a fluoride-free spearmint toothpaste. All-One is the maker\'s motto: one human family. The label also says seventy percent organic ingredients and that it helps freshen breath and whiten teeth without any harsh additives at all. It comes in a recyclable tube, and the box asks you to reuse it.'
+send({ id: 10, method: 'tools/call', params: { name: 'chums_reply', arguments: { text: fifty, status: 'done' } } })
 const phoneReply = await waitFor(m => m.id === 10)
 const st10 = await watch('/v1/state?since=0')
-ok(!phoneReply.result?.isError && /fluoride-free/.test(st10.spoken.at(-1)?.text ?? ''), `a ${forty.split(' ').length}-word reply to the iPhone is shown`)
+ok(!phoneReply.result?.isError && /fluoride-free/.test(st10.spoken.at(-1)?.text ?? ''), `a ${fifty.split(' ').length}-word reply to the iPhone is shown`)
 await watch('/v1/say', { text: 'Tell chumstest to run them again' })
 const watchNote = await waitFor(m => m.method === 'notifications/claude/channel')
-send({ id: 11, method: 'tools/call', params: { name: 'chums_reply', arguments: { text: forty, status: 'done' } } })
+send({ id: 11, method: 'tools/call', params: { name: 'chums_reply', arguments: { text: fifty, status: 'done' } } })
 const watchReply = await waitFor(m => m.id === 11)
 ok(watchNote.params.meta?.via === 'watch' && watchReply.result?.isError, 'from the watch again: via="watch", and the same reply is too long for it')
 

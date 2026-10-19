@@ -34,10 +34,12 @@ const cardFor = async id => until(`a card for ${id}`, async () => (await state()
 const say = (agent, text) => call('/v1/say', { text, agent })
 
 // ---------- the spoken line a hub-run agent's answer becomes ----------
-ok(spokenLine('Tests pass: all `12` of them, in **3 seconds**. More here.') === 'Tests pass: all 12 of them, in 3 seconds.', 'an answer is said as its first sentence, without markdown')
+ok(spokenLine('Tests pass: all `12` of them, in **3 seconds**. More here.') === 'Tests pass: all 12 of them, in 3 seconds. More here.', 'an answer is said in whole sentences, without markdown')
+const filler = n => Array.from({ length: n }, (_, i) => `w${i}`).join(' ')
+ok(spokenLine(`Fixed the login bug. ${filler(30)}. ${filler(20)}.`) === `Fixed the login bug. ${filler(30)}.`, 'the watch gets the whole sentences that fit in 45 words, not just the first')
 ok(spokenLine('Saved it to /Users/x/Developer/app/notes.md for you.') === 'Saved it to notes.md for you.', 'paths are said as file names')
 ok(spokenLine('See https://example.com/a/b for it.') === 'See a link for it.', 'links are "a link"')
-ok(spokenLine('one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen').split(' ').length === 15, 'and it is 15 words at most')
+ok(spokenLine(filler(50)).split(' ').length === 45, 'and it is 45 words at most')
 
 // ---------- an Agent Client Protocol agent ----------
 ok(await until('acpy up', async () => (await agentOf('acpy'))?.status === 'idle'), 'the ACP agent starts with the hub and shows as idle')
@@ -49,8 +51,8 @@ ok(mcp?.name === 'chums' && mcp.args[0].endsWith('channel/chums-channel.mjs') &&
 
 const o1 = (await say('acpy', 'run the tool please')).body
 ok(o1.kind === 'order' && o1.target === 'acpy', `an order to it is routed like any other (${o1.echo})`)
-const said1 = await spokenBy('acpy', 'Tests pass: all 12 of them, in 3 seconds.')
-ok(said1?.kind === 'done', "a turn that didn't call chums_reply is answered with its last message's first sentence")
+const said1 = await spokenBy('acpy', 'Tests pass: all 12 of them, in 3 seconds. Here are the details of every test that ran today.')
+ok(said1?.kind === 'done', "a turn that didn't call chums_reply is answered with its last message, in the sentences that fit")
 const p1 = noted().find(n => n.agent === 'acp' && n.method === 'session/prompt')?.text ?? ''
 ok(/^\[Standing instructions from Chums/.test(p1) && /chums_reply/.test(p1) && /\[From the watch\] \[Your soul/.test(p1) && /run the tool please$/.test(p1),
   'the first prompt carries the standing instructions, then the watch mark, its soul and the order')
@@ -108,7 +110,7 @@ const rt = JSON.parse(fs.readFileSync(path.join(home, '.chums/agents/codey.runti
 ok(rt.thread === savedThread && rt.socket.endsWith(`${cfg.port}-codey.sock`), 'and bin/chums-agents open can find its thread and socket')
 
 await say('codey', 'run the tool')
-ok(await spokenBy('codey', 'All tests pass.'), 'its final answer is said when it didn\'t call chums_reply')
+ok(await spokenBy('codey', 'All tests pass. Twelve of them, in three seconds.'),'its final answer is said when it didn\'t call chums_reply')
 const t2 = (await state()).tools.filter(t => t.session === 'codey')
 ok(t2.some(t => t.text === 'Bash npm test' && t.type === 'test' && t.ok) && t2.some(t => t.text === 'Read package.json'),
   `its commands are events, read as what they do (${t2.map(t => t.text).join(', ')})`)

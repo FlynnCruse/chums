@@ -36,8 +36,8 @@ const DEBUG = !!process.env.CHUMS_RUNTIME_DEBUG                 // every event t
 const LIMIT = /rate.?limit|quota|too many requests|\b429\b|usage limit|allowance|overloaded|capacity|exceeded your/i
 const short = (t, n = 60) => { const s = String(t ?? '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s }
 
-/// The first sentence of an agent's answer, said aloud: no markdown, code, links or paths, 15 words at most. With a
-/// longer limit (an order from the iPhone), as many whole sentences as fit in it.
+/// An agent's answer, said aloud: no markdown, code, links or paths, as many whole sentences as fit in the limit
+/// (MAX_WORDS for the watch, more for the iPhone), cut at the limit when the first sentence alone is longer.
 export function spokenLine(text, limit = MAX_WORDS) {
   const t = String(text ?? '')
     .replace(/```[\s\S]*?```/g, ' ')
@@ -50,7 +50,7 @@ export function spokenLine(text, limit = MAX_WORDS) {
   // sentences end at . ! ? before a space or the end (so "notes.md" stays whole)
   const sentences = (t.match(/.+?[.!?]+(?=\s|$)|.+$/g) ?? [t]).map(x => x.trim())
   let first = sentences[0]
-  if (limit > MAX_WORDS) for (const s of sentences.slice(1)) {             // the watch: the first sentence only
+  for (const s of sentences.slice(1)) {
     if ((first + ' ' + s).split(' ').length > limit) break
     first += ' ' + s
   }

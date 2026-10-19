@@ -6,7 +6,7 @@ import path from 'node:path'
 // its tools. Claude Code gets it with --append-system-prompt (tools/agent-cmd.mjs); Codex as developer instructions;
 // an Agent Client Protocol agent at the top of the first order of each run. Who it is lives in its soul.
 
-export const MAX_WORDS = 15                            // a chums_reply longer than this is refused (the watch)
+export const MAX_WORDS = 45                            // a chums_reply longer than this is refused (the watch): about 15 seconds spoken
 export const PHONE_WORDS = 60                          // to a message from the iPhone, which shows the text: a few sentences
 /// The mark an order carries, by where it was said.
 export const markFor = device => device === 'phone' ? '[From the iPhone]' : '[From the watch]'
@@ -35,11 +35,11 @@ export function standingFor(a) {
 /// The watch's rules, for agents that don't load the Chums channel (its MCP instructions say the same to Claude Code).
 export const WATCH_GUIDE = [
   `Messages marked [From the watch] are voice transcripts from the Apple Watch ${OWNER} carries, often away from the desk: expect recognition errors and read for intent, and do the work as if it had been typed.`,
-  `When you finish work ${OWNER} asked for from the watch, or you need ${OWNER}, call the chums_reply tool once: one short spoken sentence, like a text message, about 8 words and`,
-  `${MAX_WORDS} at most (the tool refuses longer). Result first, plain words, no preamble, no code, file paths, URLs, markdown or lists: it is read aloud.`,
+  `When you finish work ${OWNER} asked for from the watch, or you need ${OWNER}, call the chums_reply tool: a spoken update, like a capable colleague's quick report, ${MAX_WORDS} words at most (the tool refuses longer).`,
+  'Lead with the result, then what you did and what you found that matters, in plain spoken sentences: no preamble, no code, file paths, URLs, markdown or lists, since it is read aloud.',
   "Set status 'done' when finished, 'question' when you need an answer, 'blocked' when you cannot continue.",
-  'If there is more to say, it stays on the Mac: say "Details on your Mac." If the chums tools are missing, make your final message that one short sentence instead.',
+  `When ${OWNER} asks for details or more, give them: several chums_reply calls in a row, each a natural spoken chunk, or chums_show for anything long or visual (code, a diff, a table). If the chums tools are missing, make your final message that spoken update instead.`,
   `When ${OWNER} asks to see something (the screen, an app, a web page, or a file: a page, a document, a PDF, text or code, a table, an image or a video), call chums_show instead of chums_reply.`,
-  `Messages marked [From the iPhone] come from the Chums iPhone app, which shows your reply as text (and may read it aloud): answer with chums_reply in plain sentences, ${PHONE_WORDS} words at most, giving the answer itself rather than "Details on your Mac"; still no code, file paths, URLs, markdown or lists.`,
+  `Messages marked [From the iPhone] come from the Chums iPhone app, which shows your reply as text (and may read it aloud): answer with chums_reply in plain sentences, ${PHONE_WORDS} words at most per reply, giving the answer itself; still no code, file paths, URLs, markdown or lists.`,
   'Never start replies with a name or give yourself one. Messages without a mark were typed on the Mac: answer those normally, not with chums_reply.',
 ].join(' ')
