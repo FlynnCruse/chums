@@ -15,8 +15,8 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn, execFile } from 'node:child_process'
-import { startRunners, startRunner, runByHub } from './runtimes.mjs'
-import { OWNER, Owner, PAGE_GUIDE } from './standing.mjs'
+import { startRunners, startRunner, runByHub, spokenLine } from './runtimes.mjs'
+import { OWNER, Owner, PAGE_GUIDE, wordsFor } from './standing.mjs'
 
 const CONFIG_DIR = path.join(os.homedir(), '.chums')
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json')
@@ -756,7 +756,7 @@ function react(who, kind, text = '') {
   reactions.push({ id: crypto.randomUUID(), session: who, kind, text, at: Date.now() })
   if (reactions.length > 30) reactions.shift()
 }
-function onHook({ name, cwd, event, tool, input, result, notification, message, error, trigger, agent, source, reason, session }) {
+function onHook({ name, cwd, event, tool, input, result, notification, message, error, trigger, agent, source, reason, lastMessage, session }) {
   const s = session ?? sessionFor(name, cwd)
   const who = s?.name ?? name
   // Claude Code's own bookkeeping tools aren't work you'd want to see
@@ -831,6 +831,13 @@ function onHook({ name, cwd, event, tool, input, result, notification, message, 
       if (s && ['working', 'compacting', 'waiting'].includes(s.status) && !approvalsFor(s)) s.status = 'idle'
       if (agents) { agents.clear(); sync() }
       tools.push({ id: crypto.randomUUID(), session: who, type: 'stop', text: `${who} stopped`, ok: true, at: Date.now() })
+      // a session resumed from a typed conversation often answers in the terminal instead of with chums_reply: the
+      // watch still hears its answer (hub-run agents do this themselves)
+      if (s?.awaitingReply && !s.driver && !approvalsFor(s)) {
+        const line = spokenLine(lastMessage, wordsFor(s.awaitingReply))
+        if (line) replyFrom(s, line, 'done')
+        s.awaitingReply = null
+      }
       break
   }
   bump()
@@ -939,6 +946,7 @@ function route(text, shownApproval = null, agentId = null, device = null, files 
   const attached = files.length ? `\n\nAttached (files on this Mac; read them): ${files.join(', ')}` : ''
   deliver(target, { type: 'order', text: soulPrefix(target) + text + attached, said: text, utteranceId: id, device: device ?? 'watch' })
   target.replyTo = device                                             // its answer is spoken on the device that asked
+  target.awaitingReply = device ?? 'watch'
   if (agentNamed(target.name)) focusOn(target.name)
   kokoro.keepWarm(agentNamed(target.name)?.voice)
   target.status = 'working'
@@ -967,6 +975,7 @@ async function soulFromVoice(agentId, text) {
 /// One spoken line from a session: chums_reply (the channel's, or a hub-run agent's), or the hub speaking for it.
 function replyFrom(s, text, status) {
   if (status !== 'working') kokoro.stopWarm()                         // its voice is rendered next: nothing in its way
+  if (status !== 'working') s.awaitingReply = null
   s.lastLine = text
   s.lastSpokeAt = Date.now()
   s.status = status === 'working' ? 'working' : status === 'blocked' ? 'blocked'
@@ -1173,7 +1182,7 @@ const handle = async (req, res) => {
       try {
         const a = await makeArtifact({ file, url: page, title, kind, from })
         const line = String(text ?? '').trim() || a.title
-        s.lastLine = line; s.lastSpokeAt = Date.now(); s.status = 'idle'
+        s.lastLine = line; s.lastSpokeAt = Date.now(); s.status = 'idle'; s.awaitingReply = null
         say(line, s.name, 'artifact', { artifact: a })
         log('artifact <-', s.name, a.kind, a.title, `${a.w}x${a.h}`)
         return json(res, 200, { ok: true, ...a })
