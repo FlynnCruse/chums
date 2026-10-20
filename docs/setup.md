@@ -395,7 +395,7 @@ change the order.
 | Voice: read replies aloud | on | Off: replies are text and a tap on the wrist |
 | Watch voice | | The watch's own voice, for replies the Mac doesn't voice ([the agents' voices](#the-agents-voices)). A tap plays a sample |
 | Stay on while held | on | While you hold the watch facing you, the screen stays on, up to 10 minutes without a touch. Put down, it sleeps after 20 seconds |
-| Keyring: stay on | on | [Keyring mode](#keyring-mode) |
+| Keyring: stay on | off | [Keyring mode](#keyring-mode) |
 | Demo: play every state | off | The character plays every state in turn |
 
 ## The iPhone app
@@ -486,9 +486,12 @@ not "Can't reach your Mac", and a typed message gets an answer spoken on the iPh
 
 ## Keyring mode
 
-Chums can be carried on a keyring instead of worn. Keyring mode ("Keyring: stay on" in the watch app's settings, on by
+Chums can be carried on a keyring instead of worn. Keyring mode ("Keyring: stay on" in the watch app's settings, off by
 default) keeps Chums in front and running: it runs a workout session, the one thing watchOS lets keep an app frontmost
 when the screen dims. No workout is saved to Health or Fitness.
+
+While it runs, Chums can't be quit: watchOS reopens a workout app that is swiped away. Turn the setting off to quit it.
+If the Mac is out of reach for 10 minutes, keyring mode lets go by itself, and starts again when you next open Chums.
 
 1. Allow Health › Workouts when Chums asks. watchOS asks once. If it was refused, see
    [troubleshooting.md](troubleshooting.md#keyring-mode-doesnt-stay-on).

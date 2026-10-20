@@ -22,6 +22,15 @@ struct ChumsWatchApp: App {
                     hub.event(old == p ? "launch, build \(HubConfig.build), keyring \(keepOn.enabled ? "on" : "off")" : "app \(p == .active ? "active" : p == .inactive ? "inactive" : "background")")
                 }
                 .onChange(of: keepOn.running, initial: true) { _, r in hub.keyring = r; if r { hub.start() } }
+                // with the Mac away, keyring mode only holds the watch hostage: let go until Chums is opened again
+                .task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(60))
+                        if keepOn.running, let f = hub.failingFor, f > 600 {
+                            keepOn.release("Your Mac was out of reach for 10 minutes, so keyring mode stopped. It starts again when you open Chums.")
+                        }
+                    }
+                }
         }
     }
 }

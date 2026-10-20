@@ -25,7 +25,8 @@ final class KeepOn: NSObject {
     private var yielded = false
 
     var enabled: Bool {
-        get { UserDefaults.standard.object(forKey: Self.key) as? Bool ?? true }
+        // off unless turned on: while it runs, watchOS keeps Chums in front and reopens it when it's swiped away
+        get { UserDefaults.standard.object(forKey: Self.key) as? Bool ?? false }
         set { UserDefaults.standard.set(newValue, forKey: Self.key); Task { newValue ? await start() : stop() } }
     }
 
@@ -81,6 +82,15 @@ final class KeepOn: NSObject {
         session = nil
         running = false
         onEvent?("keyring stopped")
+    }
+
+    /// Ends the session without turning keyring mode off: it starts again the next time Chums is opened.
+    func release(_ why: String) {
+        guard session != nil else { return }
+        yielded = true
+        stop()
+        problem = why
+        onEvent?("keyring released: \(why)")
     }
 }
 

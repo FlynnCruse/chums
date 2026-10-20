@@ -150,6 +150,8 @@ final class HubClient {
     private var pollTask: Task<Void, Never>?
     private var hostIndex = 0
     private var failingSince: Date?          // the first failure since the last success
+    /// How long the hub has been failing to answer, or nil while it answers.
+    var failingFor: TimeInterval? { failingSince.map { Date().timeIntervalSince($0) } }
     /// The hub's addresses to try. 127.0.0.1 is the Mac only in the Simulator; on a real watch it's the watch itself.
     private static let hosts: [String] = {
 #if targetEnvironment(simulator)
