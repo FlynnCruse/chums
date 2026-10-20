@@ -353,6 +353,13 @@ agent's when its name is the agent's id. `bin/chums-claude` adds the Chums chann
 the files you send from the iPhone (`~/.chums/uploads`) without asking. Its
 first start shows the two screens above; answer them in the terminal.
 
+**A conversation you already have.** A Claude Code session loads the Chums channel when it starts, so a running one
+can't be joined. `bin/chums-attach <id>` hands its conversation over instead: it stops agent `<id>`'s background
+session, resumes the conversation in a new iTerm (or Terminal) window as that agent, with the channel, and starts the
+background session again when that window's session ends or the window closes. Quit the old session (`/exit`).
+`bin/chums-attach --install-command` adds `/chums-attach <id>` to Claude Code, to do it from inside the session.
+A resumed conversation tends to answer in its terminal; the hub then speaks the turn's final message on the watch.
+
 To restart the hub: Ctrl-C and `bin/chums-hub` in its terminal, or
 `launchctl kickstart -k gui/$UID/dev.chums.hub` when it runs as a LaunchAgent.
 

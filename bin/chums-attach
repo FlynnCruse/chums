@@ -1,0 +1,80 @@
+#!/bin/zsh
+# Hand a Claude Code conversation to Chums, so the watch and the iPhone can steer it: stops agent <id>'s background
+# session, resumes the conversation in a new iTerm window (Terminal if iTerm isn't installed) as that agent, with the
+# Chums channel, and starts the agent's background session again when that window's session ends or is closed.
+# Usage: chums-attach <agent id> [session id] [folder]
+#   session id: default $CLAUDE_CODE_SESSION_ID (Claude Code sets it, e.g. for the /chums-attach command), else the
+#               folder's most recent conversation
+#   folder: the conversation's project folder, default the current one
+# Then quit the old session (/exit): two sessions on one conversation would each miss the other's turns.
+#   chums-attach --install-command   write ~/.claude/commands/chums-attach.md: /chums-attach <agent id> in any session
+set -e
+source "${0:A:h:h}/tools/common.zsh"
+chums_help "$@"
+LA=~/Library/LaunchAgents
+label() { echo "$CHUMS_LABEL_PREFIX.agent.$1" }
+
+if [[ ${1:-} == --install-command ]]; then
+  CMD=~/.claude/commands/chums-attach.md SELF="$CHUMS_ROOT/bin/chums-attach"
+  mkdir -p ${CMD:h}
+  cat > $CMD <<EOF
+---
+description: Hand this conversation to Chums, so the watch and the iPhone can steer it as one of the agents
+argument-hint: <agent id, e.g. ray>
+allowed-tools: Bash($SELF:*)
+---
+!\`$SELF \$ARGUMENTS 2>&1\`
+
+Relay the output above to the user in a sentence or two. If it succeeded, the conversation continues in a new window as
+that agent: tell them to type /exit here, and do nothing else in this session. If it failed, say why and how to fix it.
+EOF
+  echo "wrote $CMD: type /chums-attach <agent id> in a Claude Code session"
+  exit 0
+fi
+
+if [[ ${1:-} == --run ]]; then
+  # inside the new window: closing it hangs up the session, so the agent comes back on every way out
+  ID=$2 SID=$3 DIR=$4 restored=
+  restore() {
+    [[ -n $restored ]] && return; restored=1
+    launchctl bootstrap gui/$(id -u) "$LA/$(label $ID).plist" 2>/dev/null && echo "$ID is back in the background"
+  }
+  trap restore EXIT
+  trap 'restore; exit 0' HUP INT TERM
+  cd "$DIR"
+  "$CHUMS_ROOT/bin/chums-claude" $ID --resume $SID
+  exit 0
+fi
+
+AGENTS=$CHUMS_HOME/agents.json
+ID=${1:-} SID=${2:-${CLAUDE_CODE_SESSION_ID:-}} DIR=${3:-$PWD}
+DIR=${DIR:A}
+ids=$(python3 -c 'import json,sys; print(", ".join(a["id"] for a in json.load(open(sys.argv[1]))))' $AGENTS)
+[[ -n $ID ]] || chums_die "usage: chums-attach <agent id> [session id] [folder]. Agents: $ids"
+RT=$(python3 -c 'import json,sys; print(next((a.get("runtime") or "claude" for a in json.load(open(sys.argv[1])) if a["id"] == sys.argv[2]), ""))' $AGENTS $ID)
+[[ -n $RT ]] || chums_die "no agent $ID in $AGENTS. Agents: $ids"
+[[ $RT == claude ]] || chums_die "$ID runs on $RT, not Claude Code: pick a Claude Code agent ($ids)"
+
+PROJECT=~/.claude/projects/${DIR//[^a-zA-Z0-9]/-}
+if [[ -z $SID ]]; then
+  newest=($PROJECT/*.jsonl(N.om[1]))
+  [[ -n $newest ]] || chums_die "no Claude Code conversation in $DIR (nothing in $PROJECT)"
+  SID=${newest:t:r}
+  echo "No session id given: using $DIR's most recent conversation ($SID)."
+fi
+[[ -f $PROJECT/$SID.jsonl ]] || chums_die "no conversation $SID in $DIR (looked for $PROJECT/$SID.jsonl)"
+
+# a .command file opened in the terminal app runs in a new window, with no Apple events (no Automation permission)
+LAUNCHER=$CHUMS_HOME/attach/$ID.command
+mkdir -p -m 700 ${LAUNCHER:h}
+print -r -- "#!/bin/zsh
+exec ${(q)CHUMS_ROOT}/bin/chums-attach --run ${(q)ID} ${(q)SID} ${(q)DIR}" > $LAUNCHER
+chmod 700 $LAUNCHER
+APP=Terminal; [[ -d /Applications/iTerm.app ]] && APP=iTerm
+launchctl bootout gui/$(id -u)/$(label $ID) 2>/dev/null || true
+open -a $APP $LAUNCHER || {
+  launchctl bootstrap gui/$(id -u) "$LA/$(label $ID).plist" 2>/dev/null
+  chums_die "couldn't open a $APP window, so $ID stays in the background"
+}
+echo "This conversation now runs as $ID in a new window, steerable from the watch and the iPhone."
+echo "Quit this session here (/exit). When you quit the new one, $ID goes back to its own background session."
